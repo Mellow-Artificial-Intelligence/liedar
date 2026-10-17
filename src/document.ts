@@ -7,7 +7,6 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCanvas } from "@napi-rs/canvas";
-import type { JSONValue } from "ai";
 import exifr from "exifr";
 import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { MAX_SIDE_PIXELS, toPageImage, type PageImage } from "./page-image";
@@ -25,6 +24,7 @@ const MEDIA_TYPES: Record<string, "application/pdf" | "image/png" | "image/jpeg"
 /** pdf.js needs its bundled fonts to draw PDFs that use standard fonts without embedding them. */
 const PDFJS_DIRECTORY = dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")));
 
+type JSONValue = string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 type JsonRecord = Record<string, JSONValue>;
 type RenderParameters = Parameters<PDFPageProxy["render"]>[0];
 

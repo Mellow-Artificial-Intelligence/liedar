@@ -1,15 +1,9 @@
 /**
- * Asks Jev (TypeSafe AI, via AI Gateway) whether a document is likely
- * fraudulent, and how likely each common fraud signal is to be present.
+ * Asks Jev (TypeSafe AI) whether a document is likely fraudulent, and how
+ * likely each common fraud signal is to be present.
  */
-import {
-  experimental_decide as decide,
-  type Experimental_DecisionModel as DecisionModel,
-  type Experimental_DecisionStatePart as DecisionStatePart,
-} from "ai";
 import type { LoadedDocument } from "./document";
-
-export const FRAUD_MODEL_ID = "typesafe-ai/jev";
+import { askJev, type JevOptions, type JevQuestion, type JevState } from "./jev";
 
 /** A signal at or above this probability is reported as a reason. */
 export const REASON_THRESHOLD = 0.5;
@@ -56,7 +50,6 @@ type SignalKey = keyof typeof FRAUD_SIGNALS;
 
 const QUESTIONS = {
   likelyFraud: {
-    type: "boolean",
     instructions:
       "Considering the page images and the file metadata together, is this document likely fraudulent, forged, or altered from its original?",
     criteria: {
@@ -64,13 +57,8 @@ const QUESTIONS = {
       false: "Likely an authentic, unaltered document",
     },
   },
-  ...(Object.fromEntries(
-    Object.entries(FRAUD_SIGNALS).map(([key, signal]) => [
-      key,
-      { type: "boolean", instructions: signal.instructions },
-    ]),
-  ) as Record<SignalKey, { type: "boolean"; instructions: string }>),
-} as const;
+  ...Object.fromEntries(Object.entries(FRAUD_SIGNALS).map(([key, { instructions }]) => [key, { instructions }])),
+} as Record<"likelyFraud" | SignalKey, JevQuestion>;
 
 export type FraudReason = { key: SignalKey; label: string; confidence: number };
 
@@ -84,48 +72,31 @@ export type FraudReport = {
   signals: FraudReason[];
 };
 
-/** Check one document. `model` defaults to Jev; tests pass a mock. */
-export async function checkDocument(
-  document: LoadedDocument,
-  { model = FRAUD_MODEL_ID }: { model?: DecisionModel } = {},
-): Promise<FraudReport> {
-  const result = await decide({
-    model,
-    state: buildState(document),
-    questions: QUESTIONS,
-    maxRetries: 1,
-    providerOptions: {
-      gateway: { zeroDataRetention: true },
-    },
-  });
-
-  const { likelyFraud, ...signalAnswers } = result.answers;
+/** Check one document. */
+export async function checkDocument(document: LoadedDocument, options: JevOptions = {}): Promise<FraudReport> {
+  const { likelyFraud, ...signalAnswers } = await askJev(buildState(document), QUESTIONS, options);
   const signals = (Object.keys(FRAUD_SIGNALS) as SignalKey[])
     .map((key) => ({
       key,
       label: FRAUD_SIGNALS[key].label,
-      confidence: signalAnswers[key].probability,
+      confidence: signalAnswers[key],
     }))
     .sort((a, b) => b.confidence - a.confidence);
 
   return {
-    likelyFraud: likelyFraud.probability >= REASON_THRESHOLD,
-    fraudProbability: likelyFraud.probability,
+    likelyFraud: likelyFraud >= REASON_THRESHOLD,
+    fraudProbability: likelyFraud,
     reasons: signals.filter((signal) => signal.confidence >= REASON_THRESHOLD),
     signals,
   };
 }
 
-function buildState({ metadata, pages, totalPages }: LoadedDocument): DecisionStatePart[] {
+function buildState({ metadata, pages, totalPages }: LoadedDocument): JevState {
   const skippedPages = totalPages - pages.length;
   return [
-    {
-      type: "text",
-      text:
-        "A document submitted for a fraud review. Its file metadata comes first, followed by an image of each page in order." +
-        (skippedPages > 0 ? ` Only the first ${pages.length} of ${totalPages} pages are included.` : ""),
-    },
-    { type: "json", value: metadata },
-    ...pages.map((page): DecisionStatePart => ({ type: "file", mediaType: page.mediaType, data: page.data })),
+    "A document submitted for a fraud review. Its file metadata comes first, followed by an image of each page in order." +
+      (skippedPages > 0 ? ` Only the first ${pages.length} of ${totalPages} pages are included.` : ""),
+    JSON.stringify(metadata),
+    ...pages,
   ];
 }
