@@ -23,7 +23,7 @@ const FRAUD_SIGNALS = {
   modifiedAfterCreation: {
     label: "Modified after it was created",
     instructions:
-      "Does the metadata show the file was changed after it was first created, such as a modification date later than the creation date, more than one saved version, or a file that needed repair?",
+      "Does the metadata show the file was changed after it was first created, such as a modification date later than the creation date, more than one saved version, or an edit history?",
   },
   conflictingDates: {
     label: "Conflicting or impossible dates",

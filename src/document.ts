@@ -4,10 +4,12 @@
  */
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { basename, extname } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createCanvas } from "@napi-rs/canvas";
 import type { JSONValue } from "ai";
 import exifr from "exifr";
-import * as mupdf from "mupdf";
+import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { MAX_SIDE_PIXELS, toPageImage, type PageImage } from "./page-image";
 
 /** Pages beyond this are skipped to keep requests a reasonable size. */
@@ -20,7 +22,11 @@ const MEDIA_TYPES: Record<string, "application/pdf" | "image/png" | "image/jpeg"
   ".jpeg": "image/jpeg",
 };
 
+/** pdf.js needs its bundled fonts to draw PDFs that use standard fonts without embedding them. */
+const PDFJS_DIRECTORY = dirname(fileURLToPath(import.meta.resolve("pdfjs-dist/package.json")));
+
 type JsonRecord = Record<string, JSONValue>;
+type RenderParameters = Parameters<PDFPageProxy["render"]>[0];
 
 export type LoadedDocument = {
   metadata: JsonRecord;
@@ -61,40 +67,72 @@ async function readFileMetadata(path: string, bytes: Uint8Array, mediaType: stri
 }
 
 async function loadPdf(bytes: Uint8Array) {
-  const document = mupdf.Document.openDocument(bytes, "application/pdf");
-  const pdf = document.asPDF();
-  const totalPages = document.countPages();
-
-  const metadata = withoutEmptyValues({
-    format: document.getMetaData(mupdf.Document.META_FORMAT),
-    encryption: document.getMetaData(mupdf.Document.META_ENCRYPTION),
-    title: document.getMetaData(mupdf.Document.META_INFO_TITLE),
-    author: document.getMetaData(mupdf.Document.META_INFO_AUTHOR),
-    subject: document.getMetaData(mupdf.Document.META_INFO_SUBJECT),
-    keywords: document.getMetaData(mupdf.Document.META_INFO_KEYWORDS),
-    creator: document.getMetaData(mupdf.Document.META_INFO_CREATOR),
-    producer: document.getMetaData(mupdf.Document.META_INFO_PRODUCER),
-    creationDate: document.getMetaData(mupdf.Document.META_INFO_CREATIONDATE),
-    modificationDate: document.getMetaData(mupdf.Document.META_INFO_MODIFICATIONDATE),
-    pageCount: totalPages,
-    // Each incremental save appends a version; more than one means the file was edited after it was first written.
-    savedVersions: pdf?.countVersions(),
-    neededRepair: pdf?.wasRepaired(),
+  const loadingTask = getDocument({
+    // pdf.js takes ownership of the buffer it's given, so pass a copy.
+    data: bytes.slice(),
+    standardFontDataUrl: join(PDFJS_DIRECTORY, "standard_fonts/"),
+    cMapUrl: join(PDFJS_DIRECTORY, "cmaps/"),
+    cMapPacked: true,
+    verbosity: 0,
   });
 
-  const pages: PageImage[] = [];
-  for (let index = 0; index < Math.min(totalPages, MAX_PAGES); index++) {
-    pages.push(await toPageImage(renderPdfPage(document.loadPage(index)), "png"));
-  }
+  try {
+    const document = await loadingTask.promise;
+    const metadata = await readPdfMetadata(document, bytes);
 
-  return { metadata, pages, totalPages };
+    const pages: PageImage[] = [];
+    for (let pageNumber = 1; pageNumber <= Math.min(document.numPages, MAX_PAGES); pageNumber++) {
+      pages.push(await toPageImage(await renderPdfPage(await document.getPage(pageNumber)), "png"));
+    }
+
+    return { metadata, pages, totalPages: document.numPages };
+  } finally {
+    await loadingTask.destroy();
+  }
+}
+
+async function readPdfMetadata(document: PDFDocumentProxy, bytes: Uint8Array) {
+  const { info, metadata: xmp } = await document.getMetadata();
+  const fields = info as Record<string, JSONValue | undefined>;
+
+  return withoutEmptyValues({
+    version: fields.PDFFormatVersion,
+    encryption: fields.EncryptFilterName,
+    title: fields.Title,
+    author: fields.Author,
+    subject: fields.Subject,
+    keywords: fields.Keywords,
+    creator: fields.Creator,
+    producer: fields.Producer,
+    creationDate: fields.CreationDate,
+    modificationDate: fields.ModDate,
+    pageCount: document.numPages,
+    savedVersions: countSavedVersions(bytes, fields.IsLinearized === true),
+    hasSignatures: fields.IsSignaturesPresent,
+    hasForm: fields.IsAcroFormPresent,
+    // XMP often names the editing tool and keeps a history of edits.
+    xmp: xmp ? toJson(Object.fromEntries(xmp)) : undefined,
+  });
+}
+
+/**
+ * Each incremental save appends a new end-of-file marker, so more than one
+ * version means the file was edited after it was first written. Linearized
+ * ("fast web view") files start with an extra marker of their own.
+ */
+function countSavedVersions(bytes: Uint8Array, isLinearized: boolean) {
+  const markers = Buffer.from(bytes).toString("latin1").split("%%EOF").length - 1;
+  return Math.max(1, markers - (isLinearized ? 1 : 0));
 }
 
 /** Renders a page so its longest side is the largest Jev accepts, keeping small print legible. */
-function renderPdfPage(page: mupdf.Page) {
-  const [left, top, right, bottom] = page.getBounds();
-  const scale = MAX_SIDE_PIXELS / Math.max(right - left, bottom - top);
-  return page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB).asPNG();
+async function renderPdfPage(page: PDFPageProxy) {
+  const { width, height } = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: MAX_SIDE_PIXELS / Math.max(width, height) });
+  const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+  // pdf.js is typed for a browser canvas; @napi-rs/canvas implements the same drawing API.
+  await page.render({ canvas: canvas as unknown as RenderParameters["canvas"], viewport }).promise;
+  return new Uint8Array(await canvas.encode("png"));
 }
 
 /** EXIF, TIFF, and XMP tags, such as the camera, editing software, and capture and edit dates. */
@@ -105,7 +143,9 @@ async function readImageMetadata(bytes: Uint8Array): Promise<JsonRecord> {
 
 function withoutEmptyValues(record: Record<string, JSONValue | undefined>): JsonRecord {
   return Object.fromEntries(
-    Object.entries(record).filter((entry): entry is [string, JSONValue] => entry[1] !== undefined && entry[1] !== ""),
+    Object.entries(record).filter(
+      (entry): entry is [string, JSONValue] => entry[1] !== undefined && entry[1] !== null && entry[1] !== "",
+    ),
   );
 }
 
