@@ -8,21 +8,17 @@ import { basename, extname } from "node:path";
 import type { JSONValue } from "ai";
 import exifr from "exifr";
 import * as mupdf from "mupdf";
+import { MAX_SIDE_PIXELS, toPageImage, type PageImage } from "./page-image";
 
 /** Pages beyond this are skipped to keep requests a reasonable size. */
 export const MAX_PAGES = 10;
 
-/** Render PDFs at 2x (144 DPI) so small print and edits stay legible. */
-const PDF_RENDER_SCALE = 2;
-
-const MEDIA_TYPES: Record<string, string> = {
+const MEDIA_TYPES: Record<string, "application/pdf" | "image/png" | "image/jpeg"> = {
   ".pdf": "application/pdf",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
 };
-
-export type PageImage = { mediaType: string; data: Uint8Array };
 
 type JsonRecord = Record<string, JSONValue>;
 
@@ -42,13 +38,13 @@ export async function loadDocument(path: string): Promise<LoadedDocument> {
   const fileMetadata = await readFileMetadata(path, bytes, mediaType);
 
   if (mediaType === "application/pdf") {
-    const { metadata, pages, totalPages } = loadPdf(bytes);
+    const { metadata, pages, totalPages } = await loadPdf(bytes);
     return { metadata: { file: fileMetadata, pdf: metadata }, pages, totalPages };
   }
 
   return {
     metadata: { file: fileMetadata, image: await readImageMetadata(bytes) },
-    pages: [{ mediaType, data: bytes }],
+    pages: [await toPageImage(bytes, mediaType === "image/png" ? "png" : "jpeg")],
     totalPages: 1,
   };
 }
@@ -64,7 +60,7 @@ async function readFileMetadata(path: string, bytes: Uint8Array, mediaType: stri
   };
 }
 
-function loadPdf(bytes: Uint8Array) {
+async function loadPdf(bytes: Uint8Array) {
   const document = mupdf.Document.openDocument(bytes, "application/pdf");
   const pdf = document.asPDF();
   const totalPages = document.countPages();
@@ -88,13 +84,17 @@ function loadPdf(bytes: Uint8Array) {
 
   const pages: PageImage[] = [];
   for (let index = 0; index < Math.min(totalPages, MAX_PAGES); index++) {
-    const pixmap = document
-      .loadPage(index)
-      .toPixmap(mupdf.Matrix.scale(PDF_RENDER_SCALE, PDF_RENDER_SCALE), mupdf.ColorSpace.DeviceRGB);
-    pages.push({ mediaType: "image/png", data: pixmap.asPNG() });
+    pages.push(await toPageImage(renderPdfPage(document.loadPage(index)), "png"));
   }
 
   return { metadata, pages, totalPages };
+}
+
+/** Renders a page so its longest side is the largest Jev accepts, keeping small print legible. */
+function renderPdfPage(page: mupdf.Page) {
+  const [left, top, right, bottom] = page.getBounds();
+  const scale = MAX_SIDE_PIXELS / Math.max(right - left, bottom - top);
+  return page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB).asPNG();
 }
 
 /** EXIF, TIFF, and XMP tags, such as the camera, editing software, and capture and edit dates. */
