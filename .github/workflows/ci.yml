@@ -19,3 +19,9 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
+      # The published package runs on Node, so build it and run it on the oldest supported version.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+      - run: bun run build
+      - run: npm run smoke:node

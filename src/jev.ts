@@ -2,7 +2,7 @@
  * A minimal client for asking Jev yes/no questions through TypeSafe's API.
  * https://docs.typesafe.ai/api
  */
-import type { PageImage } from "./page-image";
+import type { PageImage } from "./page-image.ts";
 
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 export const JEV_MODEL = "jev-latest";

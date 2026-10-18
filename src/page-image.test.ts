@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import sharp from "sharp";
-import { MAX_SIDE_PIXELS, MIN_SIDE_PIXELS, toPageImage } from "./page-image";
+import { MAX_SIDE_PIXELS, MIN_SIDE_PIXELS, toPageImage } from "./page-image.ts";
 
 async function solidImage(width: number, height: number, options: { orientation?: number } = {}) {
   const image = sharp({ create: { width, height, channels: 3, background: "gray" } }).jpeg();

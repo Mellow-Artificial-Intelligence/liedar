@@ -1,26 +1,15 @@
 # forged
 
-Checks a document for signs of fraud from the terminal. It reads the file's metadata, renders each page to an image, and asks [Jev](https://vercel.com/i/what-is-jev) (TypeSafe AI) whether the document is likely fraudulent and how likely each of a fixed set of fraud signals is.
+Checks a document for signs of fraud, from the terminal or from code. It reads the file's metadata, renders each page to an image, and asks [Jev](https://vercel.com/i/what-is-jev) (TypeSafe AI) whether the document is likely fraudulent and how likely each of a fixed set of fraud signals is.
 
 The result is a screening signal, not a determination. Jev's image input is experimental, and its probabilities are not calibrated for fraud. Check its answers against documents you know are genuine or fake before relying on them.
-
-## Requirements
-
-- [Bun](https://bun.sh) 1.3 or later
-- A [TypeSafe AI API key](https://docs.typesafe.ai/api)
-
-## Setup
-
-```bash
-bun install
-cp .env.example .env   # add your TypeSafe AI API key
-```
 
 ## Usage
 
 ```bash
-bun run check invoice.pdf
-bun run check receipt.jpg --json   # metadata, verdict, and every signal as JSON
+export TYPESAFE_AI_API_KEY=...   # from https://docs.typesafe.ai/api
+npx @mellow-ai/forged invoice.pdf
+npx @mellow-ai/forged receipt.jpg --json   # metadata, verdict, and every signal as JSON
 ```
 
 ```
@@ -31,7 +20,24 @@ Reasons
    60%  Modified after it was created
 ```
 
-Supports PDF, PNG, and JPEG. PDFs send their first 10 pages.
+Supports PDF, PNG, and JPEG. PDFs send their first 10 pages. Runs on Node 22.13 or later, or Bun 1.3 or later. The key can also go in a `.env` file in the working directory.
+
+### As a library
+
+```bash
+npm install @mellow-ai/forged
+```
+
+```ts
+import { checkDocument, loadDocument } from "@mellow-ai/forged";
+
+const report = await checkDocument(await loadDocument("invoice.pdf"));
+if (report.likelyFraud) {
+  console.log(report.reasons.map((reason) => reason.label));
+}
+```
+
+`checkDocument` reads the key from `TYPESAFE_AI_API_KEY`, or takes it as `{ apiKey }`.
 
 ## How it works
 
@@ -44,8 +50,13 @@ To change the signals, edit `FRAUD_SIGNALS` in `src/fraud-check.ts`. Each has a 
 ## Development
 
 ```bash
-bun test            # runs with a mock Jev, no API key needed
+bun install
+cp .env.example .env    # add your TypeSafe AI API key
+bun run check invoice.pdf
+
+bun test                # runs with a mock Jev, no API key needed
 bun run typecheck
+bun run build && npm run smoke:node   # builds dist/ and checks it runs on Node
 ```
 
 ## License
