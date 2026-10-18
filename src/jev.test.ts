@@ -31,13 +31,46 @@ describe("askJev", () => {
 
   test("reports TypeSafe's error without retrying a bad request", async () => {
     const { fetch, requests } = mockJev({}, [Response.json({ error: "Image too large" }, { status: 400 })]);
-    await expect(askJev(["text"], QUESTIONS, { apiKey, fetch })).rejects.toThrow("(400): {\"error\":\"Image too large\"}");
+    await expect(askJev(["text"], QUESTIONS, { apiKey, fetch })).rejects.toMatchObject({
+      code: "JEV_REQUEST_FAILED",
+      message: expect.stringContaining("(400): {\"error\":\"Image too large\"}"),
+      retryable: false,
+    });
     expect(requests).toHaveLength(1);
+  });
+
+  test("marks a rate limit that outlasts the retry as retryable", async () => {
+    const rateLimited = () => new Response("slow down", { status: 429 });
+    const { fetch, requests } = mockJev({}, [rateLimited(), rateLimited()]);
+    await expect(askJev(["text"], QUESTIONS, { apiKey, fetch })).rejects.toMatchObject({
+      code: "JEV_RATE_LIMITED",
+      retryable: true,
+    });
+    expect(requests).toHaveLength(2);
+  });
+
+  test("tells a rejected API key apart from other failures", async () => {
+    const { fetch } = mockJev({}, [new Response("bad key", { status: 401 })]);
+    await expect(askJev(["text"], QUESTIONS, { apiKey, fetch })).rejects.toMatchObject({ code: "INVALID_API_KEY" });
+  });
+
+  test("reports a network failure as retryable", async () => {
+    const fetch = (async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof globalThis.fetch;
+    await expect(askJev(["text"], QUESTIONS, { apiKey, fetch })).rejects.toMatchObject({
+      code: "JEV_REQUEST_FAILED",
+      message: "Couldn't reach Jev: fetch failed",
+      retryable: true,
+    });
   });
 
   test("explains a missing API key before sending anything", async () => {
     const { fetch, requests } = mockJev({});
-    await expect(askJev(["text"], QUESTIONS, { apiKey: "", fetch })).rejects.toThrow("TYPESAFE_AI_API_KEY is not set");
+    await expect(askJev(["text"], QUESTIONS, { apiKey: "", fetch })).rejects.toMatchObject({
+      code: "MISSING_API_KEY",
+      fix: expect.stringContaining("https://docs.typesafe.ai/api"),
+    });
     expect(requests).toHaveLength(0);
   });
 });

@@ -9,7 +9,7 @@ The result is a screening signal, not a determination. Jev's image input is expe
 ```bash
 export TYPESAFE_AI_API_KEY=...   # from https://docs.typesafe.ai/api
 npx @mellow-ai/forged invoice.pdf
-npx @mellow-ai/forged receipt.jpg --json   # metadata, verdict, and every signal as JSON
+npx @mellow-ai/forged receipt.jpg --json   # verdict, every signal, and the file's metadata as JSON
 ```
 
 ```
@@ -21,6 +21,68 @@ Reasons
 ```
 
 Supports PDF, PNG, and JPEG. PDFs send their first 10 pages. Runs on Node 22.13 or later, or Bun 1.3 or later. The key can also go in a `.env` file in the working directory.
+
+### JSON output
+
+Output is JSON when you pass `--json` or when stdout isn't a terminal, so scripts and agents get it without asking:
+
+```json
+{
+  "schemaVersion": 1,
+  "note": "A screening signal, not a determination. ...",
+  "report": {
+    "likelyFraud": true,
+    "fraudProbability": 0.87,
+    "reasons": [
+      {
+        "key": "editingSoftware",
+        "label": "Made or edited with editing software",
+        "question": "Does the metadata show the file was created or modified with image or PDF editing software ...?",
+        "confidence": 0.95
+      }
+    ],
+    "signals": ["...every signal, in the same shape, most likely first"],
+    "threshold": 0.5,
+    "model": "jev-latest",
+    "pagesChecked": 10,
+    "totalPages": 14
+  },
+  "metadata": { "file": { "...": "..." }, "pdf": { "...": "..." } }
+}
+```
+
+`schemaVersion` changes only when a change could break a reader.
+
+### Errors
+
+Errors are JSON too, on stdout, whenever output is:
+
+```json
+{
+  "schemaVersion": 1,
+  "error": {
+    "code": "MISSING_API_KEY",
+    "message": "TYPESAFE_AI_API_KEY is not set.",
+    "fix": "Set TYPESAFE_AI_API_KEY in the environment or in a .env file in the working directory. ...",
+    "retryable": false
+  }
+}
+```
+
+| Code | Meaning |
+| --- | --- |
+| `USAGE` | Missing file or unknown option |
+| `FILE_NOT_FOUND` | No file at the path |
+| `UNSUPPORTED_FILE_TYPE` | Not a PDF, PNG, or JPEG |
+| `INVALID_DOCUMENT` | The file is damaged, password-protected, or not the type its extension says |
+| `MISSING_API_KEY` | `TYPESAFE_AI_API_KEY` isn't set |
+| `INVALID_API_KEY` | TypeSafe rejected the key |
+| `JEV_RATE_LIMITED` | Still rate limited after one retry |
+| `JEV_REQUEST_FAILED` | Jev couldn't be reached or returned an error |
+| `JEV_BAD_RESPONSE` | Jev's response was missing an answer |
+| `UNEXPECTED` | Anything else |
+
+`retryable` says whether the same command may succeed later. The exit code is 0 when the check ran, whatever the verdict, 1 when it failed, and 2 for a usage error.
 
 ### As a library
 
@@ -37,7 +99,7 @@ if (report.likelyFraud) {
 }
 ```
 
-`checkDocument` reads the key from `TYPESAFE_AI_API_KEY`, or takes it as `{ apiKey }`.
+`checkDocument` reads the key from `TYPESAFE_AI_API_KEY`, or takes it as `{ apiKey }`. Both functions throw a `ForgedError` with the `code`, `fix`, and `retryable` described above.
 
 ## How it works
 

@@ -37,6 +37,14 @@ describe("loadDocument", () => {
   });
 
   test("rejects unsupported file types", async () => {
-    await expect(loadDocument(join(directory, "notes.txt"))).rejects.toThrow("Unsupported file type");
+    await expect(loadDocument(join(directory, "notes.txt"))).rejects.toMatchObject({ code: "UNSUPPORTED_FILE_TYPE" });
+  });
+
+  test("reports a missing file", async () => {
+    await expect(loadDocument(join(directory, "missing.pdf"))).rejects.toMatchObject({ code: "FILE_NOT_FOUND" });
+  });
+
+  test("reports a file that isn't the type its extension says", async () => {
+    await expect(loadPdf("not-really.pdf", "just some text")).rejects.toMatchObject({ code: "INVALID_DOCUMENT" });
   });
 });

@@ -2,6 +2,7 @@
  * A minimal client for asking Jev yes/no questions through TypeSafe's API.
  * https://docs.typesafe.ai/api
  */
+import { errorMessage, ForgedError } from "./errors.ts";
 import type { PageImage } from "./page-image.ts";
 
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
@@ -20,7 +21,7 @@ export async function askJev<Key extends string>(
   { apiKey = process.env.TYPESAFE_AI_API_KEY, fetch = globalThis.fetch }: JevOptions = {},
 ): Promise<Record<Key, number>> {
   if (!apiKey) {
-    throw new Error("TYPESAFE_AI_API_KEY is not set. Add it to .env.");
+    throw new ForgedError("MISSING_API_KEY", "TYPESAFE_AI_API_KEY is not set.", { fix: API_KEY_FIX });
   }
   const post = () =>
     fetch(JEV_URL, {
@@ -28,14 +29,16 @@ export async function askJev<Key extends string>(
       // TypeSafe requires this opt-in while image input is experimental.
       headers: { Authorization: `Bearer ${apiKey}`, "TypeSafe-Danger-Zone-Images": "true" },
       body: buildRequest(state, questions),
+    }).catch((error: unknown) => {
+      throw new ForgedError("JEV_REQUEST_FAILED", `Couldn't reach Jev: ${errorMessage(error)}`, { retryable: true, cause: error });
     });
 
   let response = await post();
-  if (response.status === 429 || response.status >= 500) {
+  if (isRetryable(response.status)) {
     response = await post();
   }
   if (!response.ok) {
-    throw new Error(`Jev request failed (${response.status}): ${await response.text()}`);
+    throw await responseError(response);
   }
 
   const { answers } = (await response.json()) as { answers: Record<string, { noul?: number }> };
@@ -43,12 +46,31 @@ export async function askJev<Key extends string>(
     Object.keys(questions).map((key) => {
       const probability = answers[key]?.noul;
       if (probability === undefined) {
-        throw new Error(`Jev returned no answer for "${key}"`);
+        throw new ForgedError("JEV_BAD_RESPONSE", `Jev returned no answer for "${key}".`, { retryable: true });
       }
       return [key, probability];
     }),
   ) as Record<Key, number>;
 }
+
+const API_KEY_FIX =
+  "Set TYPESAFE_AI_API_KEY in the environment or in a .env file in the working directory. Get a key at https://docs.typesafe.ai/api.";
+
+function isRetryable(status: number) {
+  return status === 429 || status >= 500;
+}
+
+async function responseError(response: Response) {
+  const message = `Jev request failed (${response.status}): ${await response.text()}`;
+  if (response.status === 401 || response.status === 403) {
+    return new ForgedError("INVALID_API_KEY", message, { fix: API_KEY_FIX });
+  }
+  if (response.status === 429) {
+    return new ForgedError("JEV_RATE_LIMITED", message, { fix: "Wait a minute, then try again.", retryable: true });
+  }
+  return new ForgedError("JEV_REQUEST_FAILED", message, { retryable: isRetryable(response.status) });
+}
+
 
 /** Images go as multipart files, each referenced from the state by a random ID so it can't match real text. */
 function buildRequest(state: JevState, questions: Record<string, JevQuestion>): FormData {

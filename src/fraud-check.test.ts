@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { LoadedDocument } from "./document.ts";
 import { checkDocument } from "./fraud-check.ts";
+import { JEV_MODEL } from "./jev.ts";
 import { mockJev } from "./mock-jev.ts";
 
 const apiKey = "test-key";
@@ -37,7 +38,9 @@ describe("checkDocument", () => {
       ["editingSoftware", 0.95],
       ["modifiedAfterCreation", 0.6],
     ]);
+    expect(report.reasons[0]?.question).toContain("editing software");
     expect(report.signals).toHaveLength(7);
+    expect(report).toMatchObject({ threshold: 0.5, model: JEV_MODEL, pagesChecked: 2, totalPages: 12 });
   });
 
   test("reports an authentic document with no reasons", async () => {

@@ -5,37 +5,57 @@
 import { basename } from "node:path";
 import { parseArgs, styleText } from "node:util";
 import { loadDocument } from "./document.ts";
+import { errorMessage, ForgedError } from "./errors.ts";
 import { checkDocument, type FraudReport } from "./fraud-check.ts";
 
-const USAGE = "Usage: forged <file.pdf|png|jpg> [--json]";
+const USAGE = `Usage: forged <file.pdf|png|jpg> [--json]
+
+Prints JSON when --json is given or stdout isn't a terminal, including on errors.
+Exit codes: 0 checked (whatever the verdict), 1 failed, 2 usage error.`;
+
+/** Bumped when the JSON output changes in a way that could break a reader. */
+const SCHEMA_VERSION = 1;
+
+const NOTE =
+  "A screening signal, not a determination. Jev's image input is experimental, and its probabilities are not calibrated for fraud.";
+
+// Checked before parsing, so a usage error is reported as JSON too.
+const jsonOutput = process.argv.includes("--json") || !process.stdout.isTTY;
 
 async function main() {
   loadEnvFile();
-  const { positionals, values } = parseArgs({
-    allowPositionals: true,
-    options: {
-      json: { type: "boolean", default: false },
-      help: { type: "boolean", short: "h", default: false },
-    },
-  });
+  const { positionals, values } = parseCommandLine();
   if (values.help) {
     console.log(USAGE);
     return;
   }
   const [path] = positionals;
   if (!path) {
-    console.error(USAGE);
-    process.exit(1);
+    throw new ForgedError("USAGE", "No file given.", { fix: USAGE });
   }
 
   const document = await loadDocument(path);
   console.error(styleText("dim", `Checking ${basename(path)} (${pageSummary(document.pages.length, document.totalPages)})...`));
   const report = await checkDocument(document);
 
-  if (values.json) {
-    console.log(JSON.stringify({ metadata: document.metadata, report }, null, 2));
+  if (jsonOutput) {
+    printJson({ schemaVersion: SCHEMA_VERSION, note: NOTE, report, metadata: document.metadata });
   } else {
     printReport(report);
+  }
+}
+
+function parseCommandLine() {
+  try {
+    return parseArgs({
+      allowPositionals: true,
+      options: {
+        json: { type: "boolean", default: false },
+        help: { type: "boolean", short: "h", default: false },
+      },
+    });
+  } catch (error) {
+    throw new ForgedError("USAGE", errorMessage(error), { fix: USAGE, cause: error });
   }
 }
 
@@ -77,7 +97,22 @@ function percent(probability: number) {
   return `${Math.round(probability * 100)}%`;
 }
 
-main().catch((error: unknown) => {
-  console.error(styleText("red", error instanceof Error ? error.message : String(error)));
-  process.exit(1);
-});
+function printJson(value: object) {
+  console.log(JSON.stringify(value, null, 2));
+}
+
+function reportError(error: unknown) {
+  const forgedError =
+    error instanceof ForgedError ? error : new ForgedError("UNEXPECTED", errorMessage(error), { cause: error });
+  if (jsonOutput) {
+    printJson({ schemaVersion: SCHEMA_VERSION, error: forgedError });
+  } else {
+    console.error(styleText("red", forgedError.message));
+    if (forgedError.fix) {
+      console.error(styleText("dim", forgedError.fix));
+    }
+  }
+  process.exitCode = forgedError.code === "USAGE" ? 2 : 1;
+}
+
+main().catch(reportError);
