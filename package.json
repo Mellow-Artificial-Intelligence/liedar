@@ -1,6 +1,6 @@
 {
   "name": "liedar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lie radar for documents: checks PDFs and images for signs of fraud with Jev, from the terminal or as a library",
   "keywords": ["fraud", "fraud-detection", "document", "forgery", "tampering", "pdf", "invoice", "receipt", "ai", "cli"],
   "license": "MIT",
