@@ -1,6 +1,6 @@
 /**
  * Checks that the built package runs under Node: the library loads and renders
- * a PDF, and the CLI gets as far as asking for an API key. Run after `npm run build`.
+ * a PDF, and the CLI gets as far as reporting the missing API key as JSON. Run after `npm run build`.
  */
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -25,7 +25,11 @@ try {
   const { TYPESAFE_AI_API_KEY: _, ...env } = process.env;
   const cliPath = join(import.meta.dirname, "../dist/cli.js");
   const cli = promisify(execFile)(process.execPath, [cliPath, path], { env, cwd: directory });
-  await assert.rejects(cli, (error: { stderr: string }) => error.stderr.includes("TYPESAFE_AI_API_KEY is not set"));
+  await assert.rejects(cli, (error: { code: number; stdout: string }) => {
+    assert.equal(error.code, 1);
+    assert.equal(JSON.parse(error.stdout).error.code, "MISSING_API_KEY");
+    return true;
+  });
 
   console.log("Node smoke test passed");
 } finally {

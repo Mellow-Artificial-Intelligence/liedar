@@ -3,9 +3,9 @@
  * likely each common fraud signal is to be present.
  */
 import type { LoadedDocument } from "./document.ts";
-import { askJev, type JevOptions, type JevQuestion, type JevState } from "./jev.ts";
+import { askJev, JEV_MODEL, type JevOptions, type JevQuestion, type JevState } from "./jev.ts";
 
-/** A signal at or above this probability is reported as a reason. */
+/** At or above this probability, the verdict is fraud and a signal is reported as a reason. */
 export const REASON_THRESHOLD = 0.5;
 
 const FRAUD_SIGNALS = {
@@ -60,7 +60,14 @@ const QUESTIONS = {
   ...Object.fromEntries(Object.entries(FRAUD_SIGNALS).map(([key, { instructions }]) => [key, { instructions }])),
 } as Record<"likelyFraud" | SignalKey, JevQuestion>;
 
-export type FraudReason = { key: SignalKey; label: string; confidence: number };
+export type FraudReason = {
+  key: SignalKey;
+  label: string;
+  /** The yes/no question Jev was asked. */
+  question: string;
+  /** Jev's probability that the answer is yes. */
+  confidence: number;
+};
 
 export type FraudReport = {
   likelyFraud: boolean;
@@ -70,6 +77,12 @@ export type FraudReport = {
   reasons: FraudReason[];
   /** Every signal, most likely first. */
   signals: FraudReason[];
+  /** The probability at or above which the verdict is fraud and a signal is a reason. */
+  threshold: number;
+  model: string;
+  /** Pages sent to Jev, which can be fewer than the document has. */
+  pagesChecked: number;
+  totalPages: number;
 };
 
 /** Check one document. */
@@ -79,6 +92,7 @@ export async function checkDocument(document: LoadedDocument, options: JevOption
     .map((key) => ({
       key,
       label: FRAUD_SIGNALS[key].label,
+      question: FRAUD_SIGNALS[key].instructions,
       confidence: signalAnswers[key],
     }))
     .sort((a, b) => b.confidence - a.confidence);
@@ -88,6 +102,10 @@ export async function checkDocument(document: LoadedDocument, options: JevOption
     fraudProbability: likelyFraud,
     reasons: signals.filter((signal) => signal.confidence >= REASON_THRESHOLD),
     signals,
+    threshold: REASON_THRESHOLD,
+    model: JEV_MODEL,
+    pagesChecked: document.pages.length,
+    totalPages: document.totalPages,
   };
 }
 
