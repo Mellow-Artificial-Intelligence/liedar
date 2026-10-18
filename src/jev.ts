@@ -26,8 +26,13 @@ export async function askJev<Key extends string>(
   const post = () =>
     fetch(JEV_URL, {
       method: "POST",
-      // TypeSafe requires this opt-in while image input is experimental.
-      headers: { Authorization: `Bearer ${apiKey}`, "TypeSafe-Danger-Zone-Images": "true" },
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        // TypeSafe requires this opt-in while image input is experimental.
+        "TypeSafe-Danger-Zone-Images": "true",
+        // Every question reads every page image, which overflows the default 32k tokens per question past 6 pages.
+        "TypeSafe-Danger-Zone-Long-Context": "true",
+      },
       body: buildRequest(state, questions),
     }).catch((error: unknown) => {
       throw new LiedarError("JEV_REQUEST_FAILED", `Couldn't reach Jev: ${errorMessage(error)}`, { retryable: true, cause: error });
