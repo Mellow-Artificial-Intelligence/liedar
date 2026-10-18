@@ -3,7 +3,7 @@
  * without parsing messages.
  */
 
-export type ForgedErrorCode =
+export type LiedarErrorCode =
   | "USAGE"
   | "FILE_NOT_FOUND"
   | "UNSUPPORTED_FILE_TYPE"
@@ -15,7 +15,7 @@ export type ForgedErrorCode =
   | "JEV_BAD_RESPONSE"
   | "UNEXPECTED";
 
-type ForgedErrorDetails = {
+type LiedarErrorDetails = {
   /** What to do about it, when there's something to do. */
   fix?: string;
   /** Whether the same call may succeed if tried again later. */
@@ -23,14 +23,14 @@ type ForgedErrorDetails = {
   cause?: unknown;
 };
 
-export class ForgedError extends Error {
-  readonly code: ForgedErrorCode;
+export class LiedarError extends Error {
+  readonly code: LiedarErrorCode;
   readonly fix?: string;
   readonly retryable: boolean;
 
-  constructor(code: ForgedErrorCode, message: string, { fix, retryable = false, cause }: ForgedErrorDetails = {}) {
+  constructor(code: LiedarErrorCode, message: string, { fix, retryable = false, cause }: LiedarErrorDetails = {}) {
     super(message, { cause });
-    this.name = "ForgedError";
+    this.name = "LiedarError";
     this.code = code;
     this.fix = fix;
     this.retryable = retryable;

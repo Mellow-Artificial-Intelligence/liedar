@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createCanvas } from "@napi-rs/canvas";
 import exifr from "exifr";
 import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { errorMessage, ForgedError } from "./errors.ts";
+import { errorMessage, LiedarError } from "./errors.ts";
 import { MAX_SIDE_PIXELS, toPageImage, type PageImage } from "./page-image.ts";
 
 /** Pages beyond this are skipped to keep requests a reasonable size. */
@@ -38,7 +38,7 @@ export type LoadedDocument = {
 export async function loadDocument(path: string): Promise<LoadedDocument> {
   const mediaType = MEDIA_TYPES[extname(path).toLowerCase()];
   if (!mediaType) {
-    throw new ForgedError("UNSUPPORTED_FILE_TYPE", `Unsupported file type: ${basename(path)}`, {
+    throw new LiedarError("UNSUPPORTED_FILE_TYPE", `Unsupported file type: ${basename(path)}`, {
       fix: `Use one of: ${Object.keys(MEDIA_TYPES).join(", ")}`,
     });
   }
@@ -58,7 +58,7 @@ export async function loadDocument(path: string): Promise<LoadedDocument> {
       totalPages: 1,
     };
   } catch (error) {
-    throw new ForgedError("INVALID_DOCUMENT", `Couldn't read ${basename(path)} as ${mediaType}: ${errorMessage(error)}`, {
+    throw new LiedarError("INVALID_DOCUMENT", `Couldn't read ${basename(path)} as ${mediaType}: ${errorMessage(error)}`, {
       fix: "Check that the file isn't damaged, password-protected, or named with the wrong extension.",
       cause: error,
     });
@@ -70,7 +70,7 @@ async function readBytes(path: string) {
     return new Uint8Array(await readFile(path));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new ForgedError("FILE_NOT_FOUND", `No file at ${path}`, { cause: error });
+      throw new LiedarError("FILE_NOT_FOUND", `No file at ${path}`, { cause: error });
     }
     throw error;
   }

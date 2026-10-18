@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Terminal entry point: `forged <file> [--json]`.
+ * Terminal entry point: `liedar <file> [--json]`.
  */
 import { basename } from "node:path";
 import { parseArgs, styleText } from "node:util";
 import { loadDocument } from "./document.ts";
-import { errorMessage, ForgedError } from "./errors.ts";
+import { errorMessage, LiedarError } from "./errors.ts";
 import { checkDocument, type FraudReport } from "./fraud-check.ts";
 
-const USAGE = `Usage: forged <file.pdf|png|jpg> [--json]
+const USAGE = `Usage: liedar <file.pdf|png|jpg> [--json]
 
 Prints JSON when --json is given or stdout isn't a terminal, including on errors.
 Exit codes: 0 checked (whatever the verdict), 1 failed, 2 usage error.`;
@@ -31,7 +31,7 @@ async function main() {
   }
   const [path] = positionals;
   if (!path) {
-    throw new ForgedError("USAGE", "No file given.", { fix: USAGE });
+    throw new LiedarError("USAGE", "No file given.", { fix: USAGE });
   }
 
   const document = await loadDocument(path);
@@ -55,7 +55,7 @@ function parseCommandLine() {
       },
     });
   } catch (error) {
-    throw new ForgedError("USAGE", errorMessage(error), { fix: USAGE, cause: error });
+    throw new LiedarError("USAGE", errorMessage(error), { fix: USAGE, cause: error });
   }
 }
 
@@ -102,17 +102,17 @@ function printJson(value: object) {
 }
 
 function reportError(error: unknown) {
-  const forgedError =
-    error instanceof ForgedError ? error : new ForgedError("UNEXPECTED", errorMessage(error), { cause: error });
+  const liedarError =
+    error instanceof LiedarError ? error : new LiedarError("UNEXPECTED", errorMessage(error), { cause: error });
   if (jsonOutput) {
-    printJson({ schemaVersion: SCHEMA_VERSION, error: forgedError });
+    printJson({ schemaVersion: SCHEMA_VERSION, error: liedarError });
   } else {
-    console.error(styleText("red", forgedError.message));
-    if (forgedError.fix) {
-      console.error(styleText("dim", forgedError.fix));
+    console.error(styleText("red", liedarError.message));
+    if (liedarError.fix) {
+      console.error(styleText("dim", liedarError.fix));
     }
   }
-  process.exitCode = forgedError.code === "USAGE" ? 2 : 1;
+  process.exitCode = liedarError.code === "USAGE" ? 2 : 1;
 }
 
 main().catch(reportError);

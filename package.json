@@ -1,16 +1,16 @@
 {
-  "name": "@mellow-ai/forged",
+  "name": "liedar",
   "version": "0.1.0",
-  "description": "Check documents for signs of fraud with Jev, from the terminal or as a library",
+  "description": "Lie radar for documents: checks PDFs and images for signs of fraud with Jev, from the terminal or as a library",
   "keywords": ["fraud", "fraud-detection", "document", "forgery", "tampering", "pdf", "invoice", "receipt", "ai", "cli"],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/colesmcintosh/forged.git"
+    "url": "git+https://github.com/colesmcintosh/liedar.git"
   },
   "type": "module",
   "bin": {
-    "forged": "dist/cli.js"
+    "liedar": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -22,9 +22,6 @@
   "engines": {
     "node": ">=22.13",
     "bun": ">=1.3"
-  },
-  "publishConfig": {
-    "access": "public"
   },
   "scripts": {
     "check": "bun run src/cli.ts",
