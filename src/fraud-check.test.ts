@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { LoadedDocument } from "./document";
-import { checkDocument } from "./fraud-check";
-import { mockJev } from "./mock-jev";
+import type { LoadedDocument } from "./document.ts";
+import { checkDocument } from "./fraud-check.ts";
+import { mockJev } from "./mock-jev.ts";
 
 const apiKey = "test-key";
 

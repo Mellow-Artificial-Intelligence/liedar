@@ -1,18 +1,27 @@
+#!/usr/bin/env node
 /**
- * Terminal entry point: `bun run check <file> [--json]`.
+ * Terminal entry point: `forged <file> [--json]`.
  */
 import { basename } from "node:path";
 import { parseArgs, styleText } from "node:util";
-import { loadDocument } from "./document";
-import { checkDocument, type FraudReport } from "./fraud-check";
+import { loadDocument } from "./document.ts";
+import { checkDocument, type FraudReport } from "./fraud-check.ts";
 
-const USAGE = "Usage: bun run check <file.pdf|png|jpg> [--json]";
+const USAGE = "Usage: forged <file.pdf|png|jpg> [--json]";
 
 async function main() {
+  loadEnvFile();
   const { positionals, values } = parseArgs({
     allowPositionals: true,
-    options: { json: { type: "boolean", default: false } },
+    options: {
+      json: { type: "boolean", default: false },
+      help: { type: "boolean", short: "h", default: false },
+    },
   });
+  if (values.help) {
+    console.log(USAGE);
+    return;
+  }
   const [path] = positionals;
   if (!path) {
     console.error(USAGE);
@@ -27,6 +36,17 @@ async function main() {
     console.log(JSON.stringify({ metadata: document.metadata, report }, null, 2));
   } else {
     printReport(report);
+  }
+}
+
+/** Reads .env from the working directory under Node. Bun loads it on its own and has no `loadEnvFile`. */
+function loadEnvFile() {
+  try {
+    process.loadEnvFile?.();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
   }
 }
 

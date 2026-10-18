@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { askJev, JEV_MODEL } from "./jev";
-import { mockJev } from "./mock-jev";
+import { askJev, JEV_MODEL } from "./jev.ts";
+import { mockJev } from "./mock-jev.ts";
 
 const QUESTIONS = { isCat: { instructions: "Does the image show a cat?" } };
 const IMAGE = { mediaType: "image/jpeg", data: new Uint8Array([1, 2, 3]) } as const;

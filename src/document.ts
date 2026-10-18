@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { createCanvas } from "@napi-rs/canvas";
 import exifr from "exifr";
 import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { MAX_SIDE_PIXELS, toPageImage, type PageImage } from "./page-image";
+import { MAX_SIDE_PIXELS, toPageImage, type PageImage } from "./page-image.ts";
 
 /** Pages beyond this are skipped to keep requests a reasonable size. */
 export const MAX_PAGES = 10;

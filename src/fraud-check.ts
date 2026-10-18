@@ -2,8 +2,8 @@
  * Asks Jev (TypeSafe AI) whether a document is likely fraudulent, and how
  * likely each common fraud signal is to be present.
  */
-import type { LoadedDocument } from "./document";
-import { askJev, type JevOptions, type JevQuestion, type JevState } from "./jev";
+import type { LoadedDocument } from "./document.ts";
+import { askJev, type JevOptions, type JevQuestion, type JevState } from "./jev.ts";
 
 /** A signal at or above this probability is reported as a reason. */
 export const REASON_THRESHOLD = 0.5;
