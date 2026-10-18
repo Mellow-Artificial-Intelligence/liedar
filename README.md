@@ -101,6 +101,30 @@ if (report.likelyFraud) {
 
 `checkDocument` reads the key from `TYPESAFE_AI_API_KEY`, or takes it as `{ apiKey }`. Both functions throw a `LiedarError` with the `code`, `fix`, and `retryable` described above.
 
+## Cost
+
+Each document is one Jev request, and TypeSafe [charges only for input tokens](https://docs.typesafe.ai/models), at $0.042 per million. Output is free. Measured on `jev-latest`, a check costs about 800 tokens for the metadata and questions, plus about one token per 384 pixels of page image:
+
+| Document | Input tokens | Cost per document |
+| --- | ---: | ---: |
+| Small receipt photo (600 × 1400) | 3,000 | $0.00013 |
+| 1-page PDF, or a phone photo | 5,800 | $0.00024 |
+| Each extra PDF page | 5,000 | $0.00021 |
+| 10-page PDF, the most sent | 50,500 | $0.0021 |
+
+A Letter or A4 page renders at 1568 px on its long side, so every PDF page costs about the same whatever is on it, and a PDF longer than 10 pages costs the same as a 10-page one. Costs scale linearly with volume:
+
+| Documents | Receipt photos | 1-page PDFs | 2-page PDFs | 5-page PDFs | 10-page PDFs |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 | $0.13 | $0.24 | $0.45 | $1.08 | $2.12 |
+| 10,000 | $1.26 | $2.43 | $4.52 | $10.76 | $21.19 |
+| 50,000 | $6.30 | $12.14 | $22.58 | $53.82 | $105.95 |
+| 100,000 | $12.60 | $24.29 | $45.17 | $107.65 | $211.91 |
+| 250,000 | $31.50 | $60.72 | $112.92 | $269.12 | $529.77 |
+| 500,000 | $63.00 | $121.44 | $225.83 | $538.23 | $1,059.53 |
+
+These are list prices, measured on synthetic documents in October 2026. Measure a sample of your own documents before budgeting a large run.
+
 ## How it works
 
 1. **Metadata.** `src/document.ts` collects the file's size and SHA-256 hash, plus the PDF's metadata (producer, creator, created and modified dates, saved versions, repairs) or the image's EXIF and XMP tags.

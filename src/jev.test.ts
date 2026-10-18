@@ -15,6 +15,7 @@ describe("askJev", () => {
     const [text, reference] = body.state.split("\n");
     expect(headers.get("Authorization")).toBe("Bearer test-key");
     expect(headers.get("TypeSafe-Danger-Zone-Images")).toBe("true");
+    expect(headers.get("TypeSafe-Danger-Zone-Long-Context")).toBe("true");
     expect(body.model).toBe(JEV_MODEL);
     expect(body.questions.isCat).toEqual({ type: "noul", ...QUESTIONS.isCat });
     expect(text).toBe("A photo:");
