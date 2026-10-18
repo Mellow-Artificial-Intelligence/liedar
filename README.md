@@ -1,6 +1,6 @@
-# forged
+# liedar
 
-Checks a document for signs of fraud, from the terminal or from code. It reads the file's metadata, renders each page to an image, and asks [Jev](https://vercel.com/i/what-is-jev) (TypeSafe AI) whether the document is likely fraudulent and how likely each of a fixed set of fraud signals is.
+Lie radar for documents. It checks a document for signs of fraud, from the terminal or from code. It reads the file's metadata, renders each page to an image, and asks [Jev](https://vercel.com/i/what-is-jev) (TypeSafe AI) whether the document is likely fraudulent and how likely each of a fixed set of fraud signals is.
 
 The result is a screening signal, not a determination. Jev's image input is experimental, and its probabilities are not calibrated for fraud. Check its answers against documents you know are genuine or fake before relying on them.
 
@@ -8,8 +8,8 @@ The result is a screening signal, not a determination. Jev's image input is expe
 
 ```bash
 export TYPESAFE_AI_API_KEY=...   # from https://docs.typesafe.ai/api
-npx @mellow-ai/forged invoice.pdf
-npx @mellow-ai/forged receipt.jpg --json   # verdict, every signal, and the file's metadata as JSON
+npx liedar invoice.pdf
+npx liedar receipt.jpg --json   # verdict, every signal, and the file's metadata as JSON
 ```
 
 ```
@@ -87,11 +87,11 @@ Errors are JSON too, on stdout, whenever output is:
 ### As a library
 
 ```bash
-npm install @mellow-ai/forged
+npm install liedar
 ```
 
 ```ts
-import { checkDocument, loadDocument } from "@mellow-ai/forged";
+import { checkDocument, loadDocument } from "liedar";
 
 const report = await checkDocument(await loadDocument("invoice.pdf"));
 if (report.likelyFraud) {
@@ -99,7 +99,7 @@ if (report.likelyFraud) {
 }
 ```
 
-`checkDocument` reads the key from `TYPESAFE_AI_API_KEY`, or takes it as `{ apiKey }`. Both functions throw a `ForgedError` with the `code`, `fix`, and `retryable` described above.
+`checkDocument` reads the key from `TYPESAFE_AI_API_KEY`, or takes it as `{ apiKey }`. Both functions throw a `LiedarError` with the `code`, `fix`, and `retryable` described above.
 
 ## How it works
 

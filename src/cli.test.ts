@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildPdf } from "./test-pdf.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "forged-cli-"));
+const directory = await mkdtemp(join(tmpdir(), "liedar-cli-"));
 afterAll(() => rm(directory, { recursive: true, force: true }));
 
 const CLI_PATH = join(import.meta.dirname, "cli.ts");
@@ -48,6 +48,6 @@ describe("cli", () => {
   test("prints help", async () => {
     const { exitCode, stdout } = await runCli("--help");
     expect(exitCode).toBe(0);
-    expect(stdout).toContain("Usage: forged");
+    expect(stdout).toContain("Usage: liedar");
   });
 });

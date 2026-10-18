@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "forged",
+      "name": "liedar",
       "dependencies": {
         "@napi-rs/canvas": "^1.0.11",
         "exifr": "^7.1.3",

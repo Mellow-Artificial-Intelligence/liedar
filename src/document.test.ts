@@ -7,7 +7,7 @@ import { loadDocument } from "./document.ts";
 import { MAX_SIDE_PIXELS } from "./page-image.ts";
 import { buildPdf } from "./test-pdf.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "forged-"));
+const directory = await mkdtemp(join(tmpdir(), "liedar-"));
 afterAll(() => rm(directory, { recursive: true, force: true }));
 
 async function loadPdf(name: string, contents: string) {

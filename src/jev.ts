@@ -2,7 +2,7 @@
  * A minimal client for asking Jev yes/no questions through TypeSafe's API.
  * https://docs.typesafe.ai/api
  */
-import { errorMessage, ForgedError } from "./errors.ts";
+import { errorMessage, LiedarError } from "./errors.ts";
 import type { PageImage } from "./page-image.ts";
 
 const JEV_URL = "https://api.typesafe.ai/v1/systemone";
@@ -21,7 +21,7 @@ export async function askJev<Key extends string>(
   { apiKey = process.env.TYPESAFE_AI_API_KEY, fetch = globalThis.fetch }: JevOptions = {},
 ): Promise<Record<Key, number>> {
   if (!apiKey) {
-    throw new ForgedError("MISSING_API_KEY", "TYPESAFE_AI_API_KEY is not set.", { fix: API_KEY_FIX });
+    throw new LiedarError("MISSING_API_KEY", "TYPESAFE_AI_API_KEY is not set.", { fix: API_KEY_FIX });
   }
   const post = () =>
     fetch(JEV_URL, {
@@ -30,7 +30,7 @@ export async function askJev<Key extends string>(
       headers: { Authorization: `Bearer ${apiKey}`, "TypeSafe-Danger-Zone-Images": "true" },
       body: buildRequest(state, questions),
     }).catch((error: unknown) => {
-      throw new ForgedError("JEV_REQUEST_FAILED", `Couldn't reach Jev: ${errorMessage(error)}`, { retryable: true, cause: error });
+      throw new LiedarError("JEV_REQUEST_FAILED", `Couldn't reach Jev: ${errorMessage(error)}`, { retryable: true, cause: error });
     });
 
   let response = await post();
@@ -46,7 +46,7 @@ export async function askJev<Key extends string>(
     Object.keys(questions).map((key) => {
       const probability = answers[key]?.noul;
       if (probability === undefined) {
-        throw new ForgedError("JEV_BAD_RESPONSE", `Jev returned no answer for "${key}".`, { retryable: true });
+        throw new LiedarError("JEV_BAD_RESPONSE", `Jev returned no answer for "${key}".`, { retryable: true });
       }
       return [key, probability];
     }),
@@ -63,12 +63,12 @@ function isRetryable(status: number) {
 async function responseError(response: Response) {
   const message = `Jev request failed (${response.status}): ${await response.text()}`;
   if (response.status === 401 || response.status === 403) {
-    return new ForgedError("INVALID_API_KEY", message, { fix: API_KEY_FIX });
+    return new LiedarError("INVALID_API_KEY", message, { fix: API_KEY_FIX });
   }
   if (response.status === 429) {
-    return new ForgedError("JEV_RATE_LIMITED", message, { fix: "Wait a minute, then try again.", retryable: true });
+    return new LiedarError("JEV_RATE_LIMITED", message, { fix: "Wait a minute, then try again.", retryable: true });
   }
-  return new ForgedError("JEV_REQUEST_FAILED", message, { retryable: isRetryable(response.status) });
+  return new LiedarError("JEV_REQUEST_FAILED", message, { retryable: isRetryable(response.status) });
 }
 
 

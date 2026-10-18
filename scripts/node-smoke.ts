@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import { loadDocument } from "../dist/index.js";
 import { buildPdf } from "../src/test-pdf.ts";
 
-const directory = await mkdtemp(join(tmpdir(), "forged-smoke-"));
+const directory = await mkdtemp(join(tmpdir(), "liedar-smoke-"));
 try {
   const path = join(directory, "invoice.pdf");
   await writeFile(path, buildPdf(), "latin1");
