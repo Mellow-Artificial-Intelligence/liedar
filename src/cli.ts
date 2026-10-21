@@ -39,7 +39,7 @@ async function main() {
   const report = await checkDocument(document);
 
   if (jsonOutput) {
-    printJson({ schemaVersion: SCHEMA_VERSION, note: NOTE, report, metadata: document.metadata });
+    printJson({ schemaVersion: SCHEMA_VERSION, note: NOTE, report, metadata: document.metadata, analysis: document.analysis });
   } else {
     printReport(report);
   }

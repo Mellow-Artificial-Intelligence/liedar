@@ -1,28 +1,42 @@
 /**
- * Asks Jev (TypeSafe AI) whether a document is likely fraudulent, and how
- * likely each common fraud signal is to be present.
+ * Asks Jev (TypeSafe AI) how likely each common fraud signal is to be present
+ * in a document, and calls it likely fraud when any signal is.
  */
 import type { LoadedDocument } from "./document.ts";
 import { askJev, JEV_MODEL, type JevOptions, type JevQuestion, type JevState } from "./jev.ts";
 
-/** At or above this probability, the verdict is fraud and a signal is reported as a reason. */
-export const REASON_THRESHOLD = 0.5;
+/**
+ * At or above this probability, the verdict is fraud and a signal is reported
+ * as a reason. Chosen on the eval's training split, where weaker answers came
+ * mostly from genuine documents.
+ */
+export const REASON_THRESHOLD = 0.75;
 
 const FRAUD_SIGNALS = {
   editingSoftware: {
     label: "Made or edited with editing software",
     instructions:
-      "Does the metadata show the file was created or modified with image or PDF editing software (such as Photoshop, GIMP, Canva, or an online PDF editor) rather than the system that would normally issue this kind of document?",
+      "Does the metadata show the file was created or modified with image or PDF editing software (such as Photoshop, GIMP, Paint, Canva, or an online PDF editor) rather than the system that would normally issue this kind of document, or does the image have properties a scanner or camera wouldn't produce, such as a transparency (alpha) channel?",
   },
   modifiedAfterCreation: {
     label: "Modified after it was created",
     instructions:
-      "Does the metadata show the file was changed after it was first created, such as a modification date later than the creation date, more than one saved version, or an edit history?",
+      "Does the metadata show the document's content was edited after it was first created, such as more than one saved version, an edit history, or a modification date later than the creation date in a PDF? A file whose creation date is later than its modification date was usually copied or converted, which is normal.",
   },
   conflictingDates: {
     label: "Conflicting or impossible dates",
     instructions:
-      "Do the dates conflict, such as dates printed on the document that don't match the metadata dates, dates in the future, or dates that are out of order?",
+      "Do the dates printed on the document conflict with each other or with the metadata, such as a date that doesn't exist, a date in the future, a due date before the issue date, or a file created before the transaction it records? Files are often scanned, copied, or converted long after the document was issued, and copying or converting can leave a creation date later than the modification date. Neither is a conflict.",
+  },
+  copiedRegion: {
+    label: "Part of a page was pasted from elsewhere on it",
+    instructions:
+      "Did liedar's pixel analysis find an exact copy: a region of a page that duplicates another region of the same page pixel for pixel? A scanned or photographed page never repeats itself exactly, so an exact copy was pasted in. Check its close-up: a copy over an amount, date, name, or number is strong evidence of alteration. Answer no if the analysis found no exact copies or couldn't check.",
+  },
+  nearCopiedRegion: {
+    label: "Part of a page closely matches another part of it",
+    instructions:
+      "Did liedar's pixel analysis find a near copy, matching another region of the same page up to JPEG compression, that sits on a figure someone would change, such as an amount, date, or number? The same character printed twice in a crisp font can match that closely too, so a near copy on a letter repeated within a word or a line of ordinary text doesn't count. Check its close-up. Answer no if the analysis found no near copies or couldn't check.",
   },
   visualTampering: {
     label: "Visual signs of tampering",
@@ -30,14 +44,24 @@ const FRAUD_SIGNALS = {
       "Do the page images show signs of tampering, such as mismatched fonts, misaligned or uneven text, inconsistent spacing, blurred or pixelated patches, or areas that look pasted in?",
   },
   numbersDontReconcile: {
-    label: "Numbers don't add up",
+    label: "Line items don't add up",
     instructions:
-      "Do the numbers fail to reconcile, such as line items, subtotals, taxes, balances, or totals that don't add up?",
+      "Do the line items fail to add up: a line's quantity times unit price differing from its amount, or the line amounts not summing to the subtotal or total printed on the document? Answer no if the document has no line items.",
+  },
+  taxDoesntMatchRate: {
+    label: "Tax doesn't match its rate",
+    instructions:
+      "Does the document show a tax rate, the amount it applies to, and a tax amount, where the rate applied to that amount differs from the tax amount by more than rounding to the smallest coin? Answer no if any of the three is missing.",
+  },
+  paymentDoesntAddUp: {
+    label: "Payment or balance doesn't add up",
+    instructions:
+      "Does the document show a payment or balance calculation that doesn't add up, such as the amount tendered minus the total not equaling the change, or a balance that doesn't carry forward from the amounts before it? Answer no if the document shows no such calculation.",
   },
   implausibleDetails: {
     label: "Implausible or invalid details",
     instructions:
-      "Does any content look invalid or implausible, such as malformed account, tax, or reference numbers, or names, addresses, and amounts that are inconsistent with each other?",
+      "Is a specific detail clearly invalid or contradicted, such as an account, tax, or registration number in an impossible format, or a name, address, or reference number that differs from the same detail elsewhere on the document? Print defects, abbreviations, and unfamiliar local formats don't count.",
   },
   inauthenticLayout: {
     label: "Layout doesn't match a genuine issuer",
@@ -48,17 +72,9 @@ const FRAUD_SIGNALS = {
 
 type SignalKey = keyof typeof FRAUD_SIGNALS;
 
-const QUESTIONS = {
-  likelyFraud: {
-    instructions:
-      "Considering the page images and the file metadata together, is this document likely fraudulent, forged, or altered from its original?",
-    criteria: {
-      true: "Likely fraudulent, forged, or tampered with",
-      false: "Likely an authentic, unaltered document",
-    },
-  },
-  ...Object.fromEntries(Object.entries(FRAUD_SIGNALS).map(([key, { instructions }]) => [key, { instructions }])),
-} as Record<"likelyFraud" | SignalKey, JevQuestion>;
+const QUESTIONS = Object.fromEntries(
+  Object.entries(FRAUD_SIGNALS).map(([key, { instructions }]) => [key, { instructions }]),
+) as Record<SignalKey, JevQuestion>;
 
 export type FraudReason = {
   key: SignalKey;
@@ -71,7 +87,10 @@ export type FraudReason = {
 
 export type FraudReport = {
   likelyFraud: boolean;
-  /** Jev's probability that the document is fraudulent. */
+  /**
+   * The strongest signal's confidence: a document is as suspect as its
+   * strongest evidence. Not calibrated, so it isn't the chance of fraud.
+   */
   fraudProbability: number;
   /** Signals at or above the threshold, most likely first. */
   reasons: FraudReason[];
@@ -87,19 +106,21 @@ export type FraudReport = {
 
 /** Check one document. */
 export async function checkDocument(document: LoadedDocument, options: JevOptions = {}): Promise<FraudReport> {
-  const { likelyFraud, ...signalAnswers } = await askJev(buildState(document), QUESTIONS, options);
+  const answers = await askJev(buildState(document), QUESTIONS, options);
   const signals = (Object.keys(FRAUD_SIGNALS) as SignalKey[])
     .map((key) => ({
       key,
       label: FRAUD_SIGNALS[key].label,
       question: FRAUD_SIGNALS[key].instructions,
-      confidence: signalAnswers[key],
+      confidence: answers[key],
     }))
     .sort((a, b) => b.confidence - a.confidence);
 
+  const fraudProbability = signals[0]!.confidence;
+
   return {
-    likelyFraud: likelyFraud >= REASON_THRESHOLD,
-    fraudProbability: likelyFraud,
+    likelyFraud: fraudProbability >= REASON_THRESHOLD,
+    fraudProbability,
     reasons: signals.filter((signal) => signal.confidence >= REASON_THRESHOLD),
     signals,
     threshold: REASON_THRESHOLD,
@@ -109,12 +130,21 @@ export async function checkDocument(document: LoadedDocument, options: JevOption
   };
 }
 
-function buildState({ metadata, pages, totalPages }: LoadedDocument): JevState {
+function buildState({ metadata, pages, totalPages, analysis, closeUps }: LoadedDocument): JevState {
   const skippedPages = totalPages - pages.length;
   return [
-    "A document submitted for a fraud review. Its file metadata comes first, followed by an image of each page in order." +
+    "A document submitted for a fraud review. Its file metadata comes first, then an image of each page in order, then what liedar's pixel analysis found." +
       (skippedPages > 0 ? ` Only the first ${pages.length} of ${totalPages} pages are included.` : ""),
     JSON.stringify(metadata),
     ...pages,
+    `Pixel analysis. Boxes are fractions of the page's width and height from its top left corner: ${JSON.stringify(analysis)}`,
+    ...closeUps.flatMap((image, index) => [
+      `Close-up of copied region ${index + 1}: on the left, the source and the page around it; on the right, its ${copyMatch(analysis, index)} copy and the page around that.`,
+      image,
+    ]),
   ];
+}
+
+function copyMatch({ copiedRegions }: LoadedDocument["analysis"], index: number) {
+  return copiedRegions.checked && copiedRegions.copiedRegions[index]?.match === "near" ? "near" : "exact";
 }
