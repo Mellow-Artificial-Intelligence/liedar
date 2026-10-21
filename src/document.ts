@@ -3,13 +3,14 @@
  * an image so Jev can look at it.
  */
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCanvas } from "@napi-rs/canvas";
 import exifr from "exifr";
 import { getDocument, type PDFDocumentProxy, type PDFPageProxy } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { errorMessage, LiedarError } from "./errors.ts";
+import { closeUp, findCopiedRegions, type CopyCheck } from "./forensics.ts";
 import { MAX_SIDE_PIXELS, toPageImage, type PageImage } from "./page-image.ts";
 
 /** Pages beyond this are skipped to keep requests a reasonable size. */
@@ -33,7 +34,14 @@ export type LoadedDocument = {
   metadata: JsonRecord;
   pages: PageImage[];
   totalPages: number;
+  /** What liedar's own pixel checks found, for Jev to weigh. */
+  analysis: { copiedRegions: CopyCheck };
+  /** Close-ups of each copied region, in the order the analysis lists them. */
+  closeUps: PageImage[];
 };
+
+/** Rendered PDF pages repeat their text exactly, so copied regions can only be found in scans and photos. */
+const PDF_COPY_CHECK: CopyCheck = { checked: false, reason: "PDF pages are rendered, so identical text repeats naturally." };
 
 export async function loadDocument(path: string): Promise<LoadedDocument> {
   const mediaType = MEDIA_TYPES[extname(path).toLowerCase()];
@@ -44,18 +52,29 @@ export async function loadDocument(path: string): Promise<LoadedDocument> {
   }
 
   const bytes = await readBytes(path);
-  const fileMetadata = await readFileMetadata(path, bytes, mediaType);
+  const fileMetadata = readFileMetadata(path, bytes, mediaType);
 
   try {
     if (mediaType === "application/pdf") {
       const { metadata, pages, totalPages } = await loadPdf(bytes);
-      return { metadata: { file: fileMetadata, pdf: metadata }, pages, totalPages };
+      return {
+        metadata: { file: fileMetadata, pdf: metadata },
+        pages,
+        totalPages,
+        analysis: { copiedRegions: PDF_COPY_CHECK },
+        closeUps: [],
+      };
     }
 
+    const copiedRegions = await findCopiedRegions(bytes);
     return {
       metadata: { file: fileMetadata, image: await readImageMetadata(bytes) },
       pages: [await toPageImage(bytes, mediaType === "image/png" ? "png" : "jpeg")],
       totalPages: 1,
+      analysis: { copiedRegions },
+      closeUps: copiedRegions.checked
+        ? await Promise.all(copiedRegions.copiedRegions.map((region) => closeUp(bytes, region)))
+        : [],
     };
   } catch (error) {
     throw new LiedarError("INVALID_DOCUMENT", `Couldn't read ${basename(path)} as ${mediaType}: ${errorMessage(error)}`, {
@@ -76,14 +95,13 @@ async function readBytes(path: string) {
   }
 }
 
-async function readFileMetadata(path: string, bytes: Uint8Array, mediaType: string) {
-  const stats = await stat(path);
+/** Leaves out the modification time on disk, which copying or downloading the file resets, so it says nothing about the document. */
+function readFileMetadata(path: string, bytes: Uint8Array, mediaType: string) {
   return {
     name: basename(path),
     mediaType,
-    sizeBytes: stats.size,
+    sizeBytes: bytes.length,
     sha256: createHash("sha256").update(bytes).digest("hex"),
-    modifiedOnDisk: stats.mtime.toISOString(),
   };
 }
 
