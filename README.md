@@ -1,6 +1,6 @@
 # liedar
 
-Lie radar for documents. It checks a document for signs of fraud, from the terminal or from code. It reads the file's metadata, looks for parts of each page copied from elsewhere on it, renders each page to an image, and asks [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) or [TypeSafe Jev](https://docs.typesafe.ai/api) how likely each of a fixed set of fraud signals is.
+Lie radar for documents. It checks a document for signs of fraud, from the browser, terminal, or code. It reads the file's metadata, looks for parts of each page copied from elsewhere on it, renders each page to an image, and asks [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) or [TypeSafe Jev](https://docs.typesafe.ai/api) how likely each of a fixed set of fraud signals is.
 
 The result is a screening signal, not a determination. Model probabilities are not calibrated for fraud. Check its answers against documents you know are genuine or fake before relying on them. The historical Jev benchmark below has not been rerun with OpenAI.
 
@@ -15,9 +15,9 @@ bun install --cwd web
 bun run dev
 ```
 
-Open the local URL printed by Next.js. Choose **Auto**, **OpenAI**, or **TypeSafe (Jev)**. Auto detects `OPENAI_API_KEY` and `TYPESAFE_AI_API_KEY` in the environment, root `.env`, or `web/.env`; when both exist, OpenAI takes precedence. An explicit provider uses only its corresponding key. Choose a PDF, PNG, or JPEG up to 20 MB and select **Check document**. Flagged signals appear first; all 15 scores are included in the JSON export.
+Open the local URL printed by Next.js. Choose **Auto**, **OpenAI**, or **TypeSafe (Jev)**. Auto detects `OPENAI_API_KEY` and `TYPESAFE_AI_API_KEY` in the environment, root `.env`, or `web/.env`; when both server keys exist, OpenAI takes precedence. Session keys take priority in Auto mode: OpenAI first, then TypeSafe, then the available server keys. An explicit provider uses only its corresponding key. Choose a PDF, PNG, or JPEG up to 20 MB and select **Check document**. Flagged signals appear first; all 15 scores are included in the JSON export.
 
-Optional session keys are stored separately per provider in the tab's `sessionStorage`, alongside the provider selection. They survive reloads and are sent in an authorization header only to the chosen provider's adapter. **Clear session key** restores that provider's server key, if configured. Keys are never guessed from their prefix or retried with the other provider, and server keys never reach the browser or reports. Close the tab or clear a session key to remove it; browser session recovery can restore session storage, so clear it explicitly on shared devices. Uploads are removed after each check.
+Optional session keys are stored separately per provider in the tab's `sessionStorage`, alongside the provider selection. They survive reloads and are sent in an authorization header to the local `/api/check` endpoint, which forwards the selected key to that provider. **Clear session key** restores that provider's server key, if configured. Keys are never guessed from their prefix or retried with the other provider, and server keys never reach the browser or reports. Close the tab or clear a session key to remove it; browser session recovery can restore session storage, so clear it explicitly on shared devices. Uploads are removed after each check.
 
 ```bash
 bun run build:web                 # production build (also builds the library)
@@ -158,7 +158,7 @@ if (report.likelyFraud) {
 }
 ```
 
-`checkDocument` detects the provider from its environment keys or accepts `{ provider, apiKey }`. Both functions throw a `LiedarError` with the `code`, `fix`, and `retryable` described above.
+`checkDocument` detects the provider from its environment keys or accepts `{ provider, apiKey }`. Library callers must load `.env` themselves when their runtime does not do so; the CLI loads it automatically. Both functions throw a `LiedarError` with the `code`, `fix`, and `retryable` described above.
 
 ## Reliability scoring
 
@@ -223,19 +223,19 @@ Each document sends one request to the selected provider: `gpt-6-luna` for OpenA
 
 1. **Metadata.** `src/document.ts` collects the file's size and SHA-256 hash, plus the PDF's metadata (producer, creator, created and modified dates, saved versions, repairs) or the image's EXIF and XMP tags.
 2. **Page images.** PDF pages are rendered with [pdf.js](https://mozilla.github.io/pdf.js/). `src/page-image.ts` then fits every page image to a consistent size: it rotates photos upright from their EXIF orientation, shrinks the longest side to 1568 px, and pads any side under 280 px with white.
-3. **Pixel forensics.** For PNG and JPEG files, `src/forensics.ts` looks for regions of the page that copy another region. Sensor and paper noise mean a real scan or photo never repeats itself pixel for pixel, so an exact copy (`src/exact-copies.ts`) was pasted in, the commonest way receipts are altered. JPEG compression changes a pasted patch slightly, so for JPEGs `src/near-copies.ts` also finds copies that match up to compression. Those are weaker evidence, since the same character printed twice can match as closely, and OpenAI weighs them as a separate signal. The checks skip repeats that JPEG tiles, straight edges, and dashed lines produce, don't near-match black and white scans, and don't check images that look digitally generated, such as screenshots, whose text repeats naturally. Each copied region becomes a close-up: the source and the copy side by side, outlined, with the page around them. PDF pages are rendered, so they aren't checked yet.
+3. **Pixel forensics.** For PNG and JPEG files, `src/forensics.ts` looks for regions of the page that copy another region. Sensor and paper noise mean a real scan or photo never repeats itself pixel for pixel, so an exact copy (`src/exact-copies.ts`) was pasted in, the commonest way receipts are altered. JPEG compression changes a pasted patch slightly, so for JPEGs `src/near-copies.ts` also finds copies that match up to compression. Those are weaker evidence, since the same character printed twice can match as closely, and the selected provider weighs them as a separate signal. The checks skip repeats that JPEG tiles, straight edges, and dashed lines produce, don't near-match black and white scans, and don't check images that look digitally generated, such as screenshots, whose text repeats naturally. Each copied region becomes a close-up: the source and the copy side by side, outlined, with the page around them. PDF pages are rendered, so they aren't checked yet.
 4. **Decision.** `src/fraud-check.ts` sends the metadata, page images, pixel findings, and close-ups to the selected provider in one request, through `src/decisions.ts` or `src/jev.ts` with the shared rubric and validation in `src/assessment.ts`. It asks 15 predicate questions plus one native reliability score question. Each predicate returns a probability, and the native score returns an overall 0–4 reliability assessment. Signals at 75% or above appear in `reviewReasons`; only tampering and consistency signals contribute to the legacy fraud summary.
 
-To change the signals, edit `FRAUD_SIGNALS` in `src/fraud-check.ts`. Each has a `label` for the terminal and the `instructions` OpenAI is asked.
+To change the signals, edit `FRAUD_SIGNALS` in `src/fraud-check.ts`. Each has a `label` for the terminal and the `instructions` sent to either provider.
 
 ## Development
 
 ```bash
 bun install
-cp .env.example .env    # add your OpenAI API key
+cp .env.example .env    # set OPENAI_API_KEY, TYPESAFE_AI_API_KEY, or both
 bun run check invoice.pdf
 
-bun test                # runs with a mock Decisions API, no API key needed
+bun test                # mocked provider requests; no API key needed
 bun run typecheck
 bun run build && npm run smoke:node   # builds dist/ and checks it runs on Node
 ```
@@ -245,7 +245,7 @@ bun run build && npm run smoke:node   # builds dist/ and checks it runs on Node
 Releases publish to npm from GitHub Actions through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token is stored. Bump `version` in `package.json` in a PR, merge it, then create a release with a matching tag:
 
 ```bash
-gh release create v0.2.0 --generate-notes
+gh release create v0.3.0 --generate-notes
 ```
 
 The publish workflow runs CI, checks the tag against `package.json`, and publishes with provenance.
