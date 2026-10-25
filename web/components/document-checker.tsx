@@ -103,6 +103,7 @@ export function DocumentChecker({ serverProviders = [] }: { serverProviders?: Pr
   return (
     <section className={cn("checker", state.status === "complete" && "checker-complete")} aria-labelledby="main-heading">
       {state.status !== "complete" ? <div className="intro">
+        <span className="eyebrow">A second look</span>
         <h1 id="main-heading">Check a document.</h1>
         <p>Tampering, consistency, origin, and readability.</p>
       </div> : null}
