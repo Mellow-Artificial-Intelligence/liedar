@@ -1,15 +1,14 @@
 import { DocumentChecker } from "@/components/document-checker";
 import { getServerProviders } from "@/lib/server-key";
-import { ScanLine } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default function Home() {
   return (
     <div className="site-shell">
-      <header className="site-header"><a href="/" className="wordmark" aria-label="Liedar home"><ScanLine size={23} strokeWidth={1.5} />liedar.</a></header>
+      <header className="site-header"><a href="/" className="wordmark" aria-label="Liedar home">liedar</a></header>
       <main><DocumentChecker serverProviders={getServerProviders()} /></main>
-      <footer className="site-footer"><span>Documents are sent to the selected provider. Temporary uploads are removed after each check.</span><span>A screening tool, not a final verdict.</span></footer>
+      <footer className="site-footer" title="Documents are sent to the selected provider. Temporary uploads are removed after each check. A screening tool, not a final verdict.">AI analysis · Uploads cleared · Screening only</footer>
     </div>
   );
 }
