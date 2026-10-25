@@ -1,6 +1,6 @@
-> Reliability scoring now adds a native Decisions rubric score and separates provenance/quality from fraud evidence. Historical thresholds and results below do not validate these changed checks. Use a fresh evaluation label.
+> Liedar supports OpenAI Decisions (`gpt-6-luna`) and TypeSafe Jev (`jev-latest`) and now uses a native reliability rubric with separate provenance and quality signals. Results and TypeSafe cost estimates below describe the historical Jev implementation, not the current rubric for either provider. Use a fresh `--label` for every provider, model, or rubric change to avoid resuming incompatible results.
 
-> The application now uses OpenAI Decisions (`gpt-6-luna`). Results and TypeSafe cost estimates below are historical Jev measurements; rerun with a fresh `--label openai-decisions` to avoid reusing old results. The retained threshold has not been validated for OpenAI.
+The evaluation runner selects a provider automatically from the environment: `OPENAI_API_KEY` takes precedence over `TYPESAFE_AI_API_KEY`. It has no `--provider` option; to evaluate TypeSafe, leave `OPENAI_API_KEY` unset or empty, including in `.env`. Use labels such as `openai-0.3.0` and `typesafe-0.3.0`. The current result files record predicate probabilities and the legacy fraud summary; they do not record or evaluate the native reliability score.
 
 # Evaluation
 
@@ -24,7 +24,7 @@ To add a dataset, add an entry to `DATASETS` in `datasets.ts` that downloads it 
 
 ## Views
 
-Every document is copied under a neutral name with a fixed modification time before it's checked. liedar sends the file name and modification time to Jev, and a dataset that names or dates forgeries differently from genuine files would otherwise give the answer away.
+Every document is copied under a neutral name with a fixed modification time before it's checked. A dataset that names or dates forgeries differently from genuine files could otherwise give the answer away through metadata. The current implementation omits the filesystem modification time from model evidence.
 
 - **`as-is`** sends the file's own bytes, metadata included. This is how liedar is used.
 - **`pixels-only`** re-encodes the image as an RGB PNG on white with no metadata, so only what the page looks like can give a forgery away.
@@ -34,13 +34,13 @@ Compare the two before trusting an `as-is` score. In Find-It-Again, saving throu
 
 ## Metrics
 
-- **AUROC** of the fraud probability, with a bootstrapped 95% interval: the chance a random forgery scores above a random genuine document. 0.5 is chance. It doesn't depend on the threshold, which matters because Jev's probabilities aren't calibrated.
+- **AUROC** of the fraud probability, with a bootstrapped 95% interval: the chance a random forgery scores above a random genuine document. 0.5 is chance. It doesn't depend on the threshold, which matters because model probabilities aren't calibrated.
 - **Recall, false positive rate, precision, and F1** at liedar's threshold, and at the threshold that best separates the labels.
 - **Each signal's AUROC**, showing which questions carry information.
 - **Breakdowns by tag**, such as the forgery tool.
 - **Calibration**: how often documents in each band of fraud probability were really fraud.
 
-A full run of one view costs about $0.20 at TypeSafe's list price and takes a few minutes, most of it pixel forensics.
+Historically, a full run of one view cost about $0.20 at TypeSafe's list price and took a few minutes, most of it pixel forensics. Measure current pricing and runtime for the selected provider and rubric before a full run.
 
 ## Results
 
@@ -60,7 +60,7 @@ Held-out results, at each version's own threshold:
 | Near copies | `pixels-only` | 0.87 (0.81 to 0.93) | 72% | 0% |
 | Near copies | `jpeg` | 0.79 (0.71 to 0.86) | 46% | 2% |
 
-On `train`, the current version scored 0.90 in `pixels-only` and 0.77 in `jpeg`, so the held-out results aren't a product of tuning to the data. At its 0.75 threshold, it catches 65 of the 68 held-out forgeries with 1 false alarm among 342 genuine receipts, 49 of 68 with 1 false alarm from the pixels alone, and 31 of 68 with 8 false alarms once the receipts are JPEGs. The `jpeg` view wasn't run on held-out data before near copies; on `train`, the version before them scored 0.52 there, catching 2 of 94.
+On `train`, the historical near-copies version scored 0.90 in `pixels-only` and 0.77 in `jpeg`, so the held-out results aren't a product of tuning to the data. At its 0.75 threshold, it catches 65 of the 68 held-out forgeries with 1 false alarm among 342 genuine receipts, 49 of 68 with 1 false alarm from the pixels alone, and 31 of 68 with 8 false alarms once the receipts are JPEGs. The `jpeg` view wasn't run on held-out data before near copies; on `train`, the version before them scored 0.52 there, catching 2 of 94.
 
 ### Pixel forensics
 
