@@ -5,7 +5,3 @@ node_modules
 dist
 eval/data
 eval/results
-
-# Next.js UI
-.next/
-*.tsbuildinfo

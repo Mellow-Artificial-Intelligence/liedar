@@ -31,9 +31,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "eval": "bun run eval/run.ts",
-    "eval:report": "bun run eval/report.ts",
-    "dev": "bun run build && bun run --cwd web dev",
-    "build:web": "bun run build && bun run --cwd web build"
+    "eval:report": "bun run eval/report.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.11",

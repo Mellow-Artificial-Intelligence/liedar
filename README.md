@@ -4,29 +4,6 @@ Lie radar for documents. It checks a document for signs of fraud, from the termi
 
 The result is a screening signal, not a determination. Model probabilities are not calibrated for fraud. Check its answers against documents you know are genuine or fake before relying on them. The historical Jev benchmark below has not been rerun with OpenAI.
 
-## Browser UI
-
-A minimal Next.js interface built with shadcn/ui. Install the library and web dependencies, then start it locally:
-
-```bash
-bun install
-bun run build
-bun install --cwd web
-bun run dev
-```
-
-Open the local URL printed by Next.js. If `OPENAI_API_KEY` is configured in the environment, the root `.env`, or `web/.env`, it is used automatically. Otherwise add a key in the UI. Choose a PDF, PNG, or JPEG up to 20 MB, and select **Check document**. Flagged signals appear first with a subtle entrance animation; other checks and document details stay collapsed. All 15 signals are included in the downloadable JSON report. Reduced-motion preferences are respected.
-
-An optional session key overrides the server key. The browser keeps that session key in per-tab `sessionStorage`, including across reloads, and sends it in an authorization header for each check. **Clear key** removes it immediately; closing the tab ends the session. Browser session recovery may restore session storage, so clear the key explicitly on shared devices. User-entered keys are never saved on the server or included in reports. Clearing a session key restores the configured server key, if one exists. The server key itself is never sent to the browser. Documents are sent to OpenAI; temporary upload files are removed after each check.
-
-```bash
-bun run build:web                 # production build (also builds the library)
-bun run --cwd web start           # serve the production build locally
-bun run --cwd web typecheck
-```
-
-The UI binds to localhost and is intended for local use. Add authentication, request limits, and HTTPS before exposing it as a hosted service.
-
 ## Usage
 
 ```bash
