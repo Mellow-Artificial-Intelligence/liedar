@@ -245,7 +245,7 @@ bun run build && npm run smoke:node   # builds dist/ and checks it runs on Node
 Releases publish to npm from GitHub Actions through [trusted publishing](https://docs.npmjs.com/trusted-publishers), so no npm token is stored. Bump `version` in `package.json` in a PR, merge it, then create a release with a matching tag:
 
 ```bash
-gh release create v0.2.0 --generate-notes
+gh release create v0.3.0 --generate-notes
 ```
 
 The publish workflow runs CI, checks the tag against `package.json`, and publishes with provenance.

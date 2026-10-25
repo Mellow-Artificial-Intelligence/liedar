@@ -1,7 +1,7 @@
 {
   "name": "liedar",
-  "version": "0.2.0",
-  "description": "Lie radar for documents: checks PDFs and images for signs of fraud with OpenAI Decisions, from the terminal or as a library",
+  "version": "0.3.0",
+  "description": "Lie radar for documents: checks PDFs and images for signs of fraud with OpenAI Decisions or TypeSafe Jev, from the terminal or as a library",
   "keywords": ["fraud", "fraud-detection", "document", "forgery", "tampering", "pdf", "invoice", "receipt", "ai", "cli"],
   "license": "MIT",
   "repository": {
