@@ -104,4 +104,27 @@ describe("document upload", () => {
     });
     expect((await handler(upload("this is not a PDF"))).status).toBe(422);
   });
+  test("binds explicit TypeSafe requests to the matching server or session key", async () => {
+    const seen: { provider: string; key: string }[] = [];
+    const handler = createUploadHandler(async (_path, apiKey, provider) => {
+      seen.push({ provider, key: apiKey });
+      throw new LiedarError("INVALID_DOCUMENT", "test");
+    }, (provider) => provider === "typesafe" ? "typesafe-server" : "openai-server");
+    const request = upload();
+    request.headers.delete("authorization");
+    const typesafeUrl = request.url + "&provider=typesafe";
+    expect((await handler(new Request(typesafeUrl, request))).status).toBe(422);
+    const session = upload();
+    expect((await handler(new Request(session.url + "&provider=typesafe", session))).status).toBe(422);
+    expect(seen).toEqual([{ provider: "typesafe", key: "typesafe-server" }, { provider: "typesafe", key: "test-session-key" }]);
+  });
+
+  test("rejects an unknown provider and a missing key for an explicitly chosen provider", async () => {
+    const handler = createUploadHandler(async () => { throw new Error("must not review"); }, () => undefined);
+    const request = upload();
+    expect((await handler(new Request(request.url + "&provider=unknown", request))).status).toBe(400);
+    const noKey = upload(); noKey.headers.delete("authorization");
+    expect((await handler(new Request(noKey.url + "&provider=typesafe", noKey))).status).toBe(401);
+  });
+
 });
