@@ -5,6 +5,8 @@
  */
 export { loadDocument, MAX_PAGES, type LoadedDocument } from "./document.ts";
 export { LiedarError, type LiedarErrorCode } from "./errors.ts";
-export { checkDocument, REASON_THRESHOLD, type FraudReason, type FraudReport } from "./fraud-check.ts";
-export type { JevOptions } from "./jev.ts";
+export { checkDocument, REASON_THRESHOLD, type FraudReason, type FraudReport, type SignalCategory } from "./fraud-check.ts";
+export type { DecisionOptions, ReliabilityScore } from "./decisions.ts";
 export type { PageImage } from "./page-image.ts";
+/** @deprecated Use DecisionOptions. The provider is now OpenAI. */
+export type { DecisionOptions as JevOptions } from "./decisions.ts";

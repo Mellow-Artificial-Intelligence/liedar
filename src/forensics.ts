@@ -1,7 +1,7 @@
 /**
- * Pixel forensics run before Jev sees a page: finds regions of a scanned or
+ * Pixel forensics run before the model sees a page: finds regions of a scanned or
  * photographed page that copy another region of the same page, the commonest
- * way receipts and invoices are altered, and draws close-ups of them for Jev.
+ * way receipts and invoices are altered, and draws close-ups of them for the model.
  */
 import sharp from "sharp";
 import { POSITION_BITS, type Box, type CopiedRegion } from "./copy-regions.ts";
@@ -35,7 +35,7 @@ export type CopyCheck =
 export async function findCopiedRegions(image: Uint8Array): Promise<CopyCheck> {
   const { format } = await sharp(image).metadata();
   const { data, info } = await sharp(image)
-    // Matches the orientation of the page image Jev sees.
+    // Matches the orientation of the page image the model sees.
     .rotate()
     .flatten({ background: "#ffffff" })
     .greyscale()
@@ -95,7 +95,7 @@ const CLOSE_UP_MIN_MARGIN = 0.06;
 /**
  * A close-up of a copied region: its source on the left and the copy on the
  * right, each outlined in red and enlarged with some of the page around it so
- * Jev can see what the copy covers.
+ * the model can see what the copy covers.
  */
 export async function closeUp(image: Uint8Array, { source, copy }: CopiedRegion): Promise<PageImage> {
   const { data, info } = await sharp(image)

@@ -1,7 +1,4 @@
-/**
- * Prepares page images for Jev, which rejects images outside its limits rather
- * than resizing them: https://docs.typesafe.ai/images#limits
- */
+/** Prepares page images at a consistent size for document review. */
 import sharp from "sharp";
 
 export const MAX_SIDE_PIXELS = 1568;
@@ -15,7 +12,7 @@ export type PageImage = { mediaType: "image/png" | "image/jpeg"; data: Uint8Arra
  */
 export async function toPageImage(input: Uint8Array, format: "png" | "jpeg"): Promise<PageImage> {
   const resized = await sharp(input)
-    // Jev strips EXIF without applying its orientation, so bake it into the pixels.
+    // Bake EXIF orientation into the pixels before sending the image.
     .rotate()
     .resize({ width: MAX_SIDE_PIXELS, height: MAX_SIDE_PIXELS, fit: "inside", withoutEnlargement: true })
     .toBuffer({ resolveWithObject: true });

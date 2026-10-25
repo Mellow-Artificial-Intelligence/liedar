@@ -33,7 +33,7 @@ export type ResultRow = {
 /**
  * How each file reaches liedar. Either way it's copied under a neutral name
  * with a fixed modification time, since datasets name forgeries differently
- * from genuine files and liedar sends both to Jev.
+ * from genuine files and liedar sends both to the model.
  */
 const VIEWS = {
   /** The file's own bytes, metadata included. */

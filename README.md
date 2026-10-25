@@ -1,23 +1,23 @@
 # liedar
 
-Lie radar for documents. It checks a document for signs of fraud, from the terminal or from code. It reads the file's metadata, looks for parts of each page copied from elsewhere on it, renders each page to an image, and asks [Jev](https://vercel.com/i/what-is-jev) (TypeSafe AI) how likely each of a fixed set of fraud signals is.
+Lie radar for documents. It checks a document for signs of fraud, from the terminal or from code. It reads the file's metadata, looks for parts of each page copied from elsewhere on it, renders each page to an image, and asks [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) how likely each of a fixed set of fraud signals is.
 
-On a public benchmark of receipts forged by hand, it catches 96% of forgeries with one false alarm in 342 genuine receipts ([Benchmark](#benchmark)). The result is still a screening signal, not a determination: Jev's image input is experimental, and its probabilities are not calibrated for fraud. Check its answers against documents you know are genuine or fake before relying on them.
+The result is a screening signal, not a determination. Model probabilities are not calibrated for fraud. Check its answers against documents you know are genuine or fake before relying on them. The historical Jev benchmark below has not been rerun with OpenAI.
 
 ## Usage
 
 ```bash
-export TYPESAFE_AI_API_KEY=...   # from https://docs.typesafe.ai/api
+export OPENAI_API_KEY=...   # from https://platform.openai.com/api-keys
 npx liedar invoice.pdf
 npx liedar receipt.jpg --json   # verdict, every signal, the file's metadata, and pixel findings as JSON
 ```
 
 ```
-LIKELY FRAUD  fraud probability 95%
+REVIEW NEEDED  reliability 2.40 / 4
 
-Reasons
-   95%  Made or edited with editing software
-   80%  Modified after it was created
+For review
+   95%  Editing software appears in the metadata (provenance)
+   80%  A later save is recorded (provenance)
 ```
 
 Supports PDF, PNG, and JPEG. PDFs send their first 10 pages. Runs on Node 22.13 or later, or Bun 1.3 or later. The key can also go in a `.env` file in the working directory.
@@ -28,22 +28,26 @@ Output is JSON when you pass `--json` or when stdout isn't a terminal, so script
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "note": "A screening signal, not a determination. ...",
   "report": {
     "likelyFraud": true,
+    "reviewRequired": true,
+    "reliability": { "score": 1.2, "maxScore": 4, "confidence": 0.85, "rubricVersion": 1 },
+    "reviewReasons": ["...all signals above the review threshold, including contextual concerns"],
     "fraudProbability": 0.95,
     "reasons": [
       {
-        "key": "editingSoftware",
-        "label": "Made or edited with editing software",
-        "question": "Does the metadata show the file was created or modified with image or PDF editing software ...?",
+        "key": "visualTampering",
+        "category": "tampering",
+        "label": "A field shows localized editing artifacts",
+        "question": "Do meaningful fields show localized evidence of replacement or erasure ...?",
         "confidence": 0.95
       }
     ],
     "signals": ["...every signal, in the same shape, most likely first"],
     "threshold": 0.75,
-    "model": "jev-latest",
+    "model": "gpt-6-luna",
     "pagesChecked": 10,
     "totalPages": 14
   },
@@ -66,7 +70,7 @@ Output is JSON when you pass `--json` or when stdout isn't a terminal, so script
 
 Boxes in `analysis` are fractions of the page's width and height, measured from its top left corner. `match` is `"exact"` for a pixel-for-pixel copy or `"near"` for one that matches up to JPEG compression. When part of the check is skipped, a `note` says why, and when none of it can run, `copiedRegions` is `{ "checked": false, "reason": "..." }` instead.
 
-`schemaVersion` changes only when a change could break a reader.
+`schemaVersion` changes only when a change could break a reader. Version 2 replaces the `JEV_*` error codes with `OPENAI_*` codes and uses `OPENAI_API_KEY`. Existing report fields are retained; reliability scoring and category-specific review fields are additive.
 
 ### Errors
 
@@ -74,11 +78,11 @@ Errors are JSON too, on stdout, whenever output is:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "error": {
     "code": "MISSING_API_KEY",
-    "message": "TYPESAFE_AI_API_KEY is not set.",
-    "fix": "Set TYPESAFE_AI_API_KEY in the environment or in a .env file in the working directory. ...",
+    "message": "OPENAI_API_KEY is not set.",
+    "fix": "Set OPENAI_API_KEY in the environment or in a .env file in the working directory. ...",
     "retryable": false
   }
 }
@@ -90,11 +94,11 @@ Errors are JSON too, on stdout, whenever output is:
 | `FILE_NOT_FOUND` | No file at the path |
 | `UNSUPPORTED_FILE_TYPE` | Not a PDF, PNG, or JPEG |
 | `INVALID_DOCUMENT` | The file is damaged, password-protected, or not the type its extension says |
-| `MISSING_API_KEY` | `TYPESAFE_AI_API_KEY` isn't set |
-| `INVALID_API_KEY` | TypeSafe rejected the key |
-| `JEV_RATE_LIMITED` | Still rate limited after one retry |
-| `JEV_REQUEST_FAILED` | Jev couldn't be reached or returned an error |
-| `JEV_BAD_RESPONSE` | Jev's response was missing an answer |
+| `MISSING_API_KEY` | `OPENAI_API_KEY` isn't set |
+| `INVALID_API_KEY` | OpenAI rejected the key |
+| `OPENAI_RATE_LIMITED` | Still rate limited after one retry |
+| `OPENAI_REQUEST_FAILED` | OpenAI couldn't be reached or returned an error |
+| `OPENAI_BAD_RESPONSE` | OpenAI returned missing, refused, or invalid answers |
 | `UNEXPECTED` | Anything else |
 
 `retryable` says whether the same command may succeed later. The exit code is 0 when the check ran, whatever the verdict, 1 when it failed, and 2 for a usage error.
@@ -114,9 +118,35 @@ if (report.likelyFraud) {
 }
 ```
 
-`checkDocument` reads the key from `TYPESAFE_AI_API_KEY`, or takes it as `{ apiKey }`. Both functions throw a `LiedarError` with the `code`, `fix`, and `retryable` described above.
+`checkDocument` reads the key from `OPENAI_API_KEY`, or takes it as `{ apiKey }`. Both functions throw a `LiedarError` with the `code`, `fix`, and `retryable` described above.
+
+## Reliability scoring
+
+Every signal probability and the overall reliability score comes directly from **one OpenAI Decisions request**. Local metadata and copied-region checks supply evidence; they do not independently assign scores. The overall answer is a native `score` question, not an average or maximum of the predicates.
+
+| Category | Examples | Interpretation |
+| --- | --- | --- |
+| Tampering | Copied pixels over an amount; localized replacement or erasure | Possible material alteration |
+| Consistency | Contradictory identifiers, impossible chronology, unreconciled readable amounts | Content needs verification |
+| Provenance | Editor history, later saves, explicit AI-origin disclosures, possible synthesis artifacts | Context, not proof of fraud or AI generation |
+| Quality | Unreadable critical fields, cropped or missing material content | Limits what can be verified |
+
+`report.reliability.score` is a weighted score from 0 to 4: critical concerns, strong concerns, verification needed, limited concerns, and no observed concerns. `confidence` is the model's confidence in this rubric answer. Neither value is a probability that the document is genuine. `rubricVersion` identifies the scoring rubric.
+
+`signals` contains every predicate probability with its `key`, `category`, `label`, and `question`. `reviewReasons` and `reviewRequired` apply the default 0.75 review threshold to all categories. Legacy `reasons`, `fraudProbability`, and `likelyFraud` consider only tampering and consistency; provenance or quality alone cannot set the fraud flag. Callers should use raw model scores to set and validate their own policies, for example:
+
+```ts
+const report = await checkDocument(await loadDocument("invoice.pdf"));
+const needsReview = report.reliability.score < 2.5 || report.signals.some(
+  (signal) => signal.category === "tampering" && signal.confidence >= 0.8,
+);
+```
+
+These thresholds are illustrative, not validated. Generic layouts, unusual fonts, missing metadata, and an editor name do not establish fabrication. No external issuer lookup, digital-signature validation, watermark detection, or cryptographic C2PA verification is performed. A synthetic-origin declaration is only assessed if present in the evidence actually extracted; absent credentials do not establish AI origin. The model can miss alterations or misinterpret normal artifacts.
 
 ## Benchmark
+
+These are historical Jev results, not measurements of the current OpenAI integration. The 75% threshold is retained pending a new evaluation.
 
 Measured on [Find it again!](https://l3i-share.univ-lr.fr/2023Finditagain/index.html) (ICDAR 2023): 987 scanned receipts, 162 of them forged by hand by copying characters, imitating text, deleting, and editing pixels. liedar was tuned on the dataset's training split only. These results are on the 410 receipts it never saw (68 forged, 342 genuine), at its 75% threshold, with `jev-latest` in October 2026.
 
@@ -145,45 +175,25 @@ bun run eval:report eval/results/*.jsonl
 
 ## Cost
 
-Each document is one Jev request, and TypeSafe [charges only for input tokens](https://docs.typesafe.ai/models), at $0.042 per million. Output is free. Measured on `jev-latest`, a check costs about 800 tokens for the metadata and questions, plus about one token per 384 pixels of page image:
-
-| Document | Input tokens | Cost per document |
-| --- | ---: | ---: |
-| Small receipt photo (600 × 1400) | 3,000 | $0.00013 |
-| 1-page PDF, or a phone photo | 5,800 | $0.00024 |
-| Each extra PDF page | 5,000 | $0.00021 |
-| 10-page PDF, the most sent | 50,500 | $0.0021 |
-
-A Letter or A4 page renders at 1568 px on its long side, so every PDF page costs about the same whatever is on it, and a PDF longer than 10 pages costs the same as a 10-page one. When an image has copied regions, each close-up (up to three) adds about 500 tokens. Costs scale linearly with volume:
-
-| Documents | Receipt photos | 1-page PDFs | 2-page PDFs | 5-page PDFs | 10-page PDFs |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | $0.13 | $0.24 | $0.45 | $1.08 | $2.12 |
-| 10,000 | $1.26 | $2.43 | $4.52 | $10.76 | $21.19 |
-| 50,000 | $6.30 | $12.14 | $22.58 | $53.82 | $105.95 |
-| 100,000 | $12.60 | $24.29 | $45.17 | $107.65 | $211.91 |
-| 250,000 | $31.50 | $60.72 | $112.92 | $269.12 | $529.77 |
-| 500,000 | $63.00 | $121.44 | $225.83 | $538.23 | $1,059.53 |
-
-These are list prices, measured on synthetic documents in October 2026. Measure a sample of your own documents before budgeting a large run.
+Each document sends one OpenAI Decisions request using `gpt-6-luna`. See the [Decisions guide](https://developers.openai.com/api/docs/guides/decisions#pricing-and-availability) for pricing. Previous Jev token counts and cost estimates do not apply; measure representative documents before budgeting a large run.
 
 ## How it works
 
 1. **Metadata.** `src/document.ts` collects the file's size and SHA-256 hash, plus the PDF's metadata (producer, creator, created and modified dates, saved versions, repairs) or the image's EXIF and XMP tags.
-2. **Page images.** PDF pages are rendered with [pdf.js](https://mozilla.github.io/pdf.js/). `src/page-image.ts` then fits every page image within [Jev's image limits](https://docs.typesafe.ai/images#limits): it rotates photos upright from their EXIF orientation, shrinks the longest side to 1568 px, and pads any side under 280 px with white.
-3. **Pixel forensics.** For PNG and JPEG files, `src/forensics.ts` looks for regions of the page that copy another region. Sensor and paper noise mean a real scan or photo never repeats itself pixel for pixel, so an exact copy (`src/exact-copies.ts`) was pasted in, the commonest way receipts are altered. JPEG compression changes a pasted patch slightly, so for JPEGs `src/near-copies.ts` also finds copies that match up to compression. Those are weaker evidence, since the same character printed twice can match as closely, and Jev weighs them as a separate signal. The checks skip repeats that JPEG tiles, straight edges, and dashed lines produce, don't near-match black and white scans, and don't check images that look digitally generated, such as screenshots, whose text repeats naturally. Each copied region becomes a close-up: the source and the copy side by side, outlined, with the page around them. PDF pages are rendered, so they aren't checked yet.
-4. **Decision.** `src/fraud-check.ts` sends the metadata, page images, pixel findings, and close-ups to Jev in one request, through a small `fetch` client for [TypeSafe's API](https://docs.typesafe.ai/api) in `src/jev.ts`. It asks one yes/no question for each fraud signal. Each signal's probability is its confidence, and signals at 75% or above are reported as reasons. The fraud probability is the strongest signal's confidence, so a document is likely fraud exactly when it has at least one reason.
+2. **Page images.** PDF pages are rendered with [pdf.js](https://mozilla.github.io/pdf.js/). `src/page-image.ts` then fits every page image to a consistent size: it rotates photos upright from their EXIF orientation, shrinks the longest side to 1568 px, and pads any side under 280 px with white.
+3. **Pixel forensics.** For PNG and JPEG files, `src/forensics.ts` looks for regions of the page that copy another region. Sensor and paper noise mean a real scan or photo never repeats itself pixel for pixel, so an exact copy (`src/exact-copies.ts`) was pasted in, the commonest way receipts are altered. JPEG compression changes a pasted patch slightly, so for JPEGs `src/near-copies.ts` also finds copies that match up to compression. Those are weaker evidence, since the same character printed twice can match as closely, and OpenAI weighs them as a separate signal. The checks skip repeats that JPEG tiles, straight edges, and dashed lines produce, don't near-match black and white scans, and don't check images that look digitally generated, such as screenshots, whose text repeats naturally. Each copied region becomes a close-up: the source and the copy side by side, outlined, with the page around them. PDF pages are rendered, so they aren't checked yet.
+4. **Decision.** `src/fraud-check.ts` sends the metadata, page images, pixel findings, and close-ups to OpenAI in one request, through a small `fetch` client for [OpenAI's Decisions API](https://developers.openai.com/api/docs/guides/decisions) in `src/decisions.ts`. It asks 15 predicate questions plus one native reliability score question. Each predicate returns a probability, and the native score returns an overall 0–4 reliability assessment. Signals at 75% or above appear in `reviewReasons`; only tampering and consistency signals contribute to the legacy fraud summary.
 
-To change the signals, edit `FRAUD_SIGNALS` in `src/fraud-check.ts`. Each has a `label` for the terminal and the `instructions` Jev is asked.
+To change the signals, edit `FRAUD_SIGNALS` in `src/fraud-check.ts`. Each has a `label` for the terminal and the `instructions` OpenAI is asked.
 
 ## Development
 
 ```bash
 bun install
-cp .env.example .env    # add your TypeSafe AI API key
+cp .env.example .env    # add your OpenAI API key
 bun run check invoice.pdf
 
-bun test                # runs with a mock Jev, no API key needed
+bun test                # runs with a mock Decisions API, no API key needed
 bun run typecheck
 bun run build && npm run smoke:node   # builds dist/ and checks it runs on Node
 ```
