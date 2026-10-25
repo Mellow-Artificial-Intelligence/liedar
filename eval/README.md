@@ -1,3 +1,7 @@
+> Reliability scoring now adds a native Decisions rubric score and separates provenance/quality from fraud evidence. Historical thresholds and results below do not validate these changed checks. Use a fresh evaluation label.
+
+> The application now uses OpenAI Decisions (`gpt-6-luna`). Results and TypeSafe cost estimates below are historical Jev measurements; rerun with a fresh `--label openai-decisions` to avoid reusing old results. The retained threshold has not been validated for OpenAI.
+
 # Evaluation
 
 Measures how well liedar tells forged documents from genuine ones on a public dataset.

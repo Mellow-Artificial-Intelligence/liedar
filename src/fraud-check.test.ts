@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import type { LoadedDocument } from "./document.ts";
 import { checkDocument } from "./fraud-check.ts";
-import { JEV_MODEL } from "./jev.ts";
-import { mockJev } from "./mock-jev.ts";
+import { DECISIONS_MODEL } from "./decisions.ts";
+import { mockDecisions } from "./mock-decisions.ts";
 
 const apiKey = "test-key";
 
@@ -31,44 +31,63 @@ const DOCUMENT: LoadedDocument = {
 
 describe("checkDocument", () => {
   test("sends the metadata, every page image, and the pixel analysis with its close-ups as one state", async () => {
-    const { fetch, requests } = mockJev({});
+    const { fetch, requests } = mockDecisions({});
     await checkDocument(DOCUMENT, { apiKey, fetch });
 
-    const { body, images } = requests[0]!;
-    const [intro, metadata, firstPage, secondPage, analysis, caption, closeUp] = body.state.split("\n");
-    expect(intro).toContain("first 2 of 12 pages");
-    expect(JSON.parse(metadata!)).toEqual(DOCUMENT.metadata);
-    expect([firstPage, secondPage, closeUp].map((reference) => body.assets[reference!]?.part)).toEqual([
-      "image-2",
-      "image-3",
-      "image-6",
+    const content = requests[0]!.body.input[0]!.content;
+    expect(content).toEqual([
+      { type: "input_text", text: expect.stringContaining("first 2 of 12 pages") },
+      { type: "input_text", text: JSON.stringify(DOCUMENT.metadata) },
+      { type: "input_image", image_url: "data:image/png;base64,AQ==" },
+      { type: "input_image", image_url: "data:image/png;base64,Ag==" },
+      { type: "input_text", text: expect.stringContaining(JSON.stringify(DOCUMENT.analysis)) },
+      { type: "input_text", text: expect.stringContaining("Close-up of copied region 1") },
+      { type: "input_image", image_url: "data:image/png;base64,Aw==" },
     ]);
-    expect(analysis).toContain(JSON.stringify(DOCUMENT.analysis));
-    expect(caption).toContain("Close-up of copied region 1");
-    expect(images.map((image) => image.type)).toEqual(["image/png", "image/png", "image/png"]);
   });
 
   test("reports signals above the threshold as reasons, most likely first", async () => {
-    const { fetch } = mockJev({ modifiedAfterCreation: 0.8, editingSoftware: 0.95, visualTampering: 0.6 });
+    const { fetch } = mockDecisions({ numbersDontReconcile: 0.8, visualTampering: 0.95, editingSoftware: 0.6 });
     const report = await checkDocument(DOCUMENT, { apiKey, fetch });
 
     expect(report.likelyFraud).toBe(true);
     expect(report.fraudProbability).toBe(0.95);
     expect(report.reasons.map((reason) => [reason.key, reason.confidence])).toEqual([
-      ["editingSoftware", 0.95],
-      ["modifiedAfterCreation", 0.8],
+      ["visualTampering", 0.95],
+      ["numbersDontReconcile", 0.8],
     ]);
-    expect(report.reasons[0]?.question).toContain("editing software");
-    expect(report.signals).toHaveLength(11);
-    expect(report).toMatchObject({ threshold: 0.75, model: JEV_MODEL, pagesChecked: 2, totalPages: 12 });
+    expect(report.reasons[0]?.question).toContain("localized evidence");
+    expect(report.signals).toHaveLength(15);
+    expect(report).toMatchObject({ threshold: 0.75, model: DECISIONS_MODEL, pagesChecked: 2, totalPages: 12 });
   });
 
-  test("reports an authentic document with no reasons", async () => {
-    const { fetch } = mockJev({ visualTampering: 0.3 });
+  test("reports no flagged concerns without asserting authenticity", async () => {
+    const { fetch } = mockDecisions({ visualTampering: 0.3 });
     const report = await checkDocument(DOCUMENT, { apiKey, fetch });
 
     expect(report.likelyFraud).toBe(false);
     expect(report.fraudProbability).toBe(0.3);
     expect(report.reasons).toEqual([]);
   });
+  test("keeps provenance, synthesis clues, and quality concerns separate from fraud", async () => {
+    const { fetch } = mockDecisions({ editingSoftware: 0.99, modifiedAfterCreation: 0.98, syntheticOrigin: 0.97, syntheticArtifacts: 0.9, unreadableDetails: 0.85, missingContext: 0.8, documentReliability: 2.3 });
+    const report = await checkDocument(DOCUMENT, { apiKey, fetch });
+    expect(report.likelyFraud).toBe(false);
+    expect(report.fraudProbability).toBe(0.1);
+    expect(report.reasons).toEqual([]);
+    expect(report.reviewRequired).toBe(true);
+    expect(report.reviewReasons).toHaveLength(6);
+    expect(report.reliability).toEqual({ score: 2.3, maxScore: 4, confidence: 0.85, rubricVersion: 1 });
+    expect(report.reviewReasons.find((reason) => reason.key === "syntheticOrigin")?.category).toBe("provenance");
+    expect(report.reviewReasons.find((reason) => reason.key === "unreadableDetails")?.category).toBe("quality");
+  });
+
+  test("asks Decisions for every signal and a native overall rubric score in one request", async () => {
+    const { fetch, requests } = mockDecisions({});
+    await checkDocument(DOCUMENT, { apiKey, fetch });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.body.questions).toHaveLength(16);
+    expect(requests[0]!.body.questions.find((question) => question.type === "score")).toMatchObject({ name: "documentReliability", levels: expect.any(Array) });
+  });
+
 });

@@ -14,10 +14,10 @@ Prints JSON when --json is given or stdout isn't a terminal, including on errors
 Exit codes: 0 checked (whatever the verdict), 1 failed, 2 usage error.`;
 
 /** Bumped when the JSON output changes in a way that could break a reader. */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const NOTE =
-  "A screening signal, not a determination. Jev's image input is experimental, and its probabilities are not calibrated for fraud.";
+  "A screening signal, not a determination. Model probabilities are not calibrated for fraud.";
 
 // Checked before parsing, so a usage error is reported as JSON too.
 const jsonOutput = process.argv.includes("--json") || !process.stdout.isTTY;
@@ -76,19 +76,19 @@ function pageSummary(sentPages: number, totalPages: number) {
 }
 
 function printReport(report: FraudReport) {
-  const verdict = report.likelyFraud
-    ? styleText(["bold", "red"], "LIKELY FRAUD")
-    : styleText(["bold", "green"], "LIKELY AUTHENTIC");
-  console.log(`\n${verdict}  ${styleText("dim", `fraud probability ${percent(report.fraudProbability)}`)}\n`);
+  const verdict = report.reviewRequired
+    ? styleText(["bold", "yellow"], "REVIEW NEEDED")
+    : styleText(["bold", "green"], "NO CONCERNS FLAGGED");
+  console.log(`\n${verdict}  ${styleText("dim", `reliability ${report.reliability.score.toFixed(2)} / ${report.reliability.maxScore}`)}\n`);
 
-  if (report.reasons.length === 0) {
-    console.log("No fraud signals above the threshold.\n");
+  if (report.reviewReasons.length === 0) {
+    console.log("No reliability signals above the review threshold. This does not authenticate the document.\n");
     return;
   }
 
-  console.log(styleText("bold", "Reasons"));
-  for (const reason of report.reasons) {
-    console.log(`  ${percent(reason.confidence).padStart(4)}  ${reason.label}`);
+  console.log(styleText("bold", "For review"));
+  for (const reason of report.reviewReasons) {
+    console.log(`  ${percent(reason.confidence).padStart(4)}  ${reason.label} (${reason.category})`);
   }
   console.log();
 }

@@ -17,7 +17,7 @@ async function loadPdf(name: string, contents: string) {
 }
 
 describe("loadDocument", () => {
-  test("reads an untouched PDF's metadata and renders its page within Jev's limits", async () => {
+  test("reads an untouched PDF's metadata and renders its page within the configured image limits", async () => {
     const document = await loadPdf("original.pdf", buildPdf());
 
     expect(document.metadata.pdf).toMatchObject({ producer: "Acme Billing 4.2", pageCount: 1, savedVersions: 1 });

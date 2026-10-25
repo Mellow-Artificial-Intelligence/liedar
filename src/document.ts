@@ -1,6 +1,6 @@
 /**
  * Loads a document from disk: collects its metadata and renders each page to
- * an image so Jev can look at it.
+ * an image for the model to review.
  */
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -34,7 +34,7 @@ export type LoadedDocument = {
   metadata: JsonRecord;
   pages: PageImage[];
   totalPages: number;
-  /** What liedar's own pixel checks found, for Jev to weigh. */
+  /** What liedar's own pixel checks found, for the model to weigh. */
   analysis: { copiedRegions: CopyCheck };
   /** Close-ups of each copied region, in the order the analysis lists them. */
   closeUps: PageImage[];
@@ -164,7 +164,7 @@ function countSavedVersions(bytes: Uint8Array, isLinearized: boolean) {
   return Math.max(1, markers - (isLinearized ? 1 : 0));
 }
 
-/** Renders a page so its longest side is the largest Jev accepts, keeping small print legible. */
+/** Renders a page to the configured maximum side length, keeping small print legible. */
 async function renderPdfPage(page: PDFPageProxy) {
   const { width, height } = page.getViewport({ scale: 1 });
   const viewport = page.getViewport({ scale: MAX_SIDE_PIXELS / Math.max(width, height) });

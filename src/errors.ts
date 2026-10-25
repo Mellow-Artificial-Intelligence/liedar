@@ -10,9 +10,9 @@ export type LiedarErrorCode =
   | "INVALID_DOCUMENT"
   | "MISSING_API_KEY"
   | "INVALID_API_KEY"
-  | "JEV_RATE_LIMITED"
-  | "JEV_REQUEST_FAILED"
-  | "JEV_BAD_RESPONSE"
+  | "OPENAI_RATE_LIMITED"
+  | "OPENAI_REQUEST_FAILED"
+  | "OPENAI_BAD_RESPONSE"
   | "UNEXPECTED";
 
 type LiedarErrorDetails = {

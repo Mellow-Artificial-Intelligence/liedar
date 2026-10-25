@@ -135,7 +135,7 @@ export function neighbors(position: number, width: number) {
   return [position - 1, position + 1, position - width, position + width];
 }
 
-/** Rounded to a tenth of a percent, which is finer than Jev can point at. */
+/** Rounded to a tenth of a percent, which is finer than the model can point at. */
 function fraction(pixels: number, total: number) {
   return Math.round((pixels / total) * 1000) / 1000;
 }
