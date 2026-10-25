@@ -6,7 +6,7 @@ The result is a screening signal, not a determination. Model probabilities are n
 
 ## Browser UI
 
-A minimal Next.js interface built with shadcn/ui. Install the library and web dependencies, then start it locally:
+A minimal Next.js interface built with shadcn/ui and Mellow's warm paper, lavender, and sage palette. Brand fonts are downloaded at build time by Next.js and served locally to the browser. Install the library and web dependencies, then start it locally:
 
 ```bash
 bun install
