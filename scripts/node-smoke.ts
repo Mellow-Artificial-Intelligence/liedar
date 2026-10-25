@@ -22,7 +22,7 @@ try {
   assert.equal((document.metadata.pdf as { producer: string }).producer, "Acme Billing 4.2");
 
   // Runs from the temporary directory, away from any .env, so no real request is sent.
-  const { OPENAI_API_KEY: _, ...env } = process.env;
+  const { OPENAI_API_KEY: _, TYPESAFE_AI_API_KEY: _typesafe, ...env } = process.env;
   const cliPath = join(import.meta.dirname, "../dist/cli.js");
   const cli = promisify(execFile)(process.execPath, [cliPath, path], { env, cwd: directory });
   await assert.rejects(cli, (error: { code: number; stdout: string }) => {

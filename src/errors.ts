@@ -13,6 +13,9 @@ export type LiedarErrorCode =
   | "OPENAI_RATE_LIMITED"
   | "OPENAI_REQUEST_FAILED"
   | "OPENAI_BAD_RESPONSE"
+  | "JEV_RATE_LIMITED"
+  | "JEV_REQUEST_FAILED"
+  | "JEV_BAD_RESPONSE"
   | "UNEXPECTED";
 
 type LiedarErrorDetails = {

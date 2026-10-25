@@ -1,14 +1,17 @@
 /**
- * Asks OpenAI Decisions for reliability signals and an overall rubric score.
+ * Asks the selected provider for reliability signals and an overall rubric score.
  * Provenance and quality are review context, not proof of fraud.
  */
 import type { LoadedDocument } from "./document.ts";
-import { askDocumentDecisions, DECISIONS_MODEL, type ReliabilityScore, type DecisionOptions, type DecisionQuestion, type DecisionState } from "./decisions.ts";
+import { askDocumentDecisions, DECISIONS_MODEL, type ReliabilityScore } from "./decisions.ts";
+import { askDocumentJev, JEV_MODEL } from "./jev.ts";
+import { resolveProvider, type CheckOptions } from "./provider.ts";
+import type { Provider, DecisionQuestion, DecisionState } from "./assessment.ts";
 
 /**
  * At or above this probability, a signal is included for review.
  * Only tampering and consistency contribute to the legacy fraud summary. Chosen on the eval's training split, where weaker answers came
- * mostly from genuine documents. Retained from Jev; not yet validated for OpenAI.
+ * mostly from genuine documents. Retained from Jev; not yet validated for this reliability rubric.
  */
 export const REASON_THRESHOLD = 0.75;
 
@@ -117,16 +120,16 @@ export type FraudReason = {
   key: SignalKey;
   category: SignalCategory;
   label: string;
-  /** The yes/no question OpenAI was asked. */
+  /** The yes/no question the model was asked. */
   question: string;
-  /** OpenAI's probability that the answer is yes. */
+  /** The model's probability that the answer is yes. */
   confidence: number;
 };
 
 export type FraudReport = {
   /** Legacy fraud flag: provenance and quality alone never set it. */
   likelyFraud: boolean;
-  /** Overall reliability, scored directly by Decisions against a five-level rubric. */
+  /** Overall reliability, scored directly by the selected model against a five-level rubric. */
   reliability: ReliabilityScore;
   /** Any signal, including provenance or quality, needs a closer look. */
   reviewRequired: boolean;
@@ -142,15 +145,18 @@ export type FraudReport = {
   signals: FraudReason[];
   /** The default probability threshold for review flags. */
   threshold: number;
+  provider: Provider;
   model: string;
-  /** Pages sent to OpenAI, which can be fewer than the document has. */
+  /** Pages sent to the model, which can be fewer than the document has. */
   pagesChecked: number;
   totalPages: number;
 };
 
 /** Check one document. */
-export async function checkDocument(document: LoadedDocument, options: DecisionOptions = {}): Promise<FraudReport> {
-  const { answers, reliability } = await askDocumentDecisions(buildState(document), QUESTIONS, options);
+export async function checkDocument(document: LoadedDocument, options: CheckOptions = {}): Promise<FraudReport> {
+  const selected = resolveProvider(options);
+  const assess = selected.provider === "typesafe" ? askDocumentJev : askDocumentDecisions;
+  const { answers, reliability } = await assess(buildState(document), QUESTIONS, { ...options, ...selected });
   const signals = (Object.keys(FRAUD_SIGNALS) as SignalKey[])
     .map((key) => ({
       key,
@@ -174,7 +180,8 @@ export async function checkDocument(document: LoadedDocument, options: DecisionO
     reasons: evidence.filter((signal) => signal.confidence >= REASON_THRESHOLD),
     signals,
     threshold: REASON_THRESHOLD,
-    model: DECISIONS_MODEL,
+    provider: selected.provider,
+    model: selected.provider === "typesafe" ? JEV_MODEL : DECISIONS_MODEL,
     pagesChecked: document.pages.length,
     totalPages: document.totalPages,
   };

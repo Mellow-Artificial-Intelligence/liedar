@@ -8,5 +8,7 @@ export { LiedarError, type LiedarErrorCode } from "./errors.ts";
 export { checkDocument, REASON_THRESHOLD, type FraudReason, type FraudReport, type SignalCategory } from "./fraud-check.ts";
 export type { DecisionOptions, ReliabilityScore } from "./decisions.ts";
 export type { PageImage } from "./page-image.ts";
-/** @deprecated Use DecisionOptions. The provider is now OpenAI. */
+export { resolveProvider, type CheckOptions } from "./provider.ts";
+export type { Provider } from "./assessment.ts";
+/** @deprecated Use CheckOptions with provider: "typesafe". */
 export type { DecisionOptions as JevOptions } from "./decisions.ts";

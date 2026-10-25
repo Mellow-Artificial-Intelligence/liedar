@@ -1,6 +1,6 @@
 # liedar
 
-Lie radar for documents. It checks a document for signs of fraud, from the terminal or from code. It reads the file's metadata, looks for parts of each page copied from elsewhere on it, renders each page to an image, and asks [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) how likely each of a fixed set of fraud signals is.
+Lie radar for documents. It checks a document for signs of fraud, from the terminal or from code. It reads the file's metadata, looks for parts of each page copied from elsewhere on it, renders each page to an image, and asks [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions) or [TypeSafe Jev](https://docs.typesafe.ai/api) how likely each of a fixed set of fraud signals is.
 
 The result is a screening signal, not a determination. Model probabilities are not calibrated for fraud. Check its answers against documents you know are genuine or fake before relying on them. The historical Jev benchmark below has not been rerun with OpenAI.
 
@@ -15,9 +15,9 @@ bun install --cwd web
 bun run dev
 ```
 
-Open the local URL printed by Next.js. If `OPENAI_API_KEY` is configured in the environment, the root `.env`, or `web/.env`, it is used automatically. Otherwise add a key in the UI. Choose a PDF, PNG, or JPEG up to 20 MB, and select **Check document**. Flagged signals appear first with a subtle entrance animation; other checks and document details stay collapsed. All 15 signals are included in the downloadable JSON report. Reduced-motion preferences are respected.
+Open the local URL printed by Next.js. Choose **Auto**, **OpenAI**, or **TypeSafe (Jev)**. Auto detects `OPENAI_API_KEY` and `TYPESAFE_AI_API_KEY` in the environment, root `.env`, or `web/.env`; when both exist, OpenAI takes precedence. An explicit provider uses only its corresponding key. Choose a PDF, PNG, or JPEG up to 20 MB and select **Check document**. Flagged signals appear first; all 15 scores are included in the JSON export.
 
-An optional session key overrides the server key. The browser keeps that session key in per-tab `sessionStorage`, including across reloads, and sends it in an authorization header for each check. **Clear key** removes it immediately; closing the tab ends the session. Browser session recovery may restore session storage, so clear the key explicitly on shared devices. User-entered keys are never saved on the server or included in reports. Clearing a session key restores the configured server key, if one exists. The server key itself is never sent to the browser. Documents are sent to OpenAI; temporary upload files are removed after each check.
+Optional session keys are stored separately per provider in the tab's `sessionStorage`, alongside the provider selection. They survive reloads and are sent in an authorization header only to the chosen provider's adapter. **Clear session key** restores that provider's server key, if configured. Keys are never guessed from their prefix or retried with the other provider, and server keys never reach the browser or reports. Close the tab or clear a session key to remove it; browser session recovery can restore session storage, so clear it explicitly on shared devices. Uploads are removed after each check.
 
 ```bash
 bun run build:web                 # production build (also builds the library)
@@ -26,6 +26,19 @@ bun run --cwd web typecheck
 ```
 
 The UI binds to localhost and is intended for local use. Add authentication, request limits, and HTTPS before exposing it as a hosted service.
+
+## Provider selection
+
+```bash
+# Automatic: OpenAI first if set, otherwise TypeSafe.
+bun run check invoice.pdf --json
+
+# Explicit choice, using that provider's environment key.
+bun run check invoice.pdf --provider typesafe --json
+bun run check invoice.pdf --provider openai --json
+```
+
+For library callers, pass `{ provider: "typesafe" }` or `{ provider: "openai" }` to `checkDocument`. Pass `{ provider, apiKey }` to use a specific key without changing the environment. A bare `{ apiKey }` continues to mean OpenAI for compatibility. `report.provider` and `report.model` identify what produced each report. Native score ranges are the same, but model scores and confidence are not interchangeable without evaluation.
 
 ## Usage
 
@@ -70,6 +83,7 @@ Output is JSON when you pass `--json` or when stdout isn't a terminal, so script
     ],
     "signals": ["...every signal, in the same shape, most likely first"],
     "threshold": 0.75,
+    "provider": "openai",
     "model": "gpt-6-luna",
     "pagesChecked": 10,
     "totalPages": 14
@@ -93,7 +107,7 @@ Output is JSON when you pass `--json` or when stdout isn't a terminal, so script
 
 Boxes in `analysis` are fractions of the page's width and height, measured from its top left corner. `match` is `"exact"` for a pixel-for-pixel copy or `"near"` for one that matches up to JPEG compression. When part of the check is skipped, a `note` says why, and when none of it can run, `copiedRegions` is `{ "checked": false, "reason": "..." }` instead.
 
-`schemaVersion` changes only when a change could break a reader. Version 2 replaces the `JEV_*` error codes with `OPENAI_*` codes and uses `OPENAI_API_KEY`. Existing report fields are retained; reliability scoring and category-specific review fields are additive.
+`schemaVersion` changes only when a change could break a reader. Version 2 introduced OpenAI support with `OPENAI_*` errors. TypeSafe requests use `JEV_*` errors; both share the same report shape. Existing report fields are retained; reliability scoring and category-specific review fields are additive.
 
 ### Errors
 
@@ -117,11 +131,14 @@ Errors are JSON too, on stdout, whenever output is:
 | `FILE_NOT_FOUND` | No file at the path |
 | `UNSUPPORTED_FILE_TYPE` | Not a PDF, PNG, or JPEG |
 | `INVALID_DOCUMENT` | The file is damaged, password-protected, or not the type its extension says |
-| `MISSING_API_KEY` | `OPENAI_API_KEY` isn't set |
-| `INVALID_API_KEY` | OpenAI rejected the key |
+| `MISSING_API_KEY` | The selected provider's API key is missing |
+| `INVALID_API_KEY` | The selected provider rejected the key |
 | `OPENAI_RATE_LIMITED` | Still rate limited after one retry |
 | `OPENAI_REQUEST_FAILED` | OpenAI couldn't be reached or returned an error |
 | `OPENAI_BAD_RESPONSE` | OpenAI returned missing, refused, or invalid answers |
+| `JEV_RATE_LIMITED` | TypeSafe is still rate limited after one retry |
+| `JEV_REQUEST_FAILED` | TypeSafe could not be reached or returned an error |
+| `JEV_BAD_RESPONSE` | TypeSafe returned missing or invalid answers |
 | `UNEXPECTED` | Anything else |
 
 `retryable` says whether the same command may succeed later. The exit code is 0 when the check ran, whatever the verdict, 1 when it failed, and 2 for a usage error.
@@ -141,11 +158,11 @@ if (report.likelyFraud) {
 }
 ```
 
-`checkDocument` reads the key from `OPENAI_API_KEY`, or takes it as `{ apiKey }`. Both functions throw a `LiedarError` with the `code`, `fix`, and `retryable` described above.
+`checkDocument` detects the provider from its environment keys or accepts `{ provider, apiKey }`. Both functions throw a `LiedarError` with the `code`, `fix`, and `retryable` described above.
 
 ## Reliability scoring
 
-Every signal probability and the overall reliability score comes directly from **one OpenAI Decisions request**. Local metadata and copied-region checks supply evidence; they do not independently assign scores. The overall answer is a native `score` question, not an average or maximum of the predicates.
+Every signal probability and the overall reliability score comes directly from **one request to the selected provider**. Local metadata and copied-region checks supply evidence; they do not independently assign scores. Both providers share the same rubric; the overall answer is a native `score` question, not an average or maximum of the predicates.
 
 | Category | Examples | Interpretation |
 | --- | --- | --- |
@@ -169,7 +186,7 @@ These thresholds are illustrative, not validated. Generic layouts, unusual fonts
 
 ## Benchmark
 
-These are historical Jev results, not measurements of the current OpenAI integration. The 75% threshold is retained pending a new evaluation.
+These are historical Jev results, not measurements of the current reliability rubric for either provider. The 75% threshold is retained pending a new evaluation.
 
 Measured on [Find it again!](https://l3i-share.univ-lr.fr/2023Finditagain/index.html) (ICDAR 2023): 987 scanned receipts, 162 of them forged by hand by copying characters, imitating text, deleting, and editing pixels. liedar was tuned on the dataset's training split only. These results are on the 410 receipts it never saw (68 forged, 342 genuine), at its 75% threshold, with `jev-latest` in October 2026.
 
@@ -198,14 +215,16 @@ bun run eval:report eval/results/*.jsonl
 
 ## Cost
 
-Each document sends one OpenAI Decisions request using `gpt-6-luna`. See the [Decisions guide](https://developers.openai.com/api/docs/guides/decisions#pricing-and-availability) for pricing. Previous Jev token counts and cost estimates do not apply; measure representative documents before budgeting a large run.
+See [TypeSafe pricing](https://docs.typesafe.ai/models) for Jev.
+
+Each document sends one request to the selected provider: `gpt-6-luna` for OpenAI or `jev-latest` for TypeSafe. See the [Decisions guide](https://developers.openai.com/api/docs/guides/decisions#pricing-and-availability) for pricing. Previous Jev token counts and cost estimates do not apply; measure representative documents before budgeting a large run.
 
 ## How it works
 
 1. **Metadata.** `src/document.ts` collects the file's size and SHA-256 hash, plus the PDF's metadata (producer, creator, created and modified dates, saved versions, repairs) or the image's EXIF and XMP tags.
 2. **Page images.** PDF pages are rendered with [pdf.js](https://mozilla.github.io/pdf.js/). `src/page-image.ts` then fits every page image to a consistent size: it rotates photos upright from their EXIF orientation, shrinks the longest side to 1568 px, and pads any side under 280 px with white.
 3. **Pixel forensics.** For PNG and JPEG files, `src/forensics.ts` looks for regions of the page that copy another region. Sensor and paper noise mean a real scan or photo never repeats itself pixel for pixel, so an exact copy (`src/exact-copies.ts`) was pasted in, the commonest way receipts are altered. JPEG compression changes a pasted patch slightly, so for JPEGs `src/near-copies.ts` also finds copies that match up to compression. Those are weaker evidence, since the same character printed twice can match as closely, and OpenAI weighs them as a separate signal. The checks skip repeats that JPEG tiles, straight edges, and dashed lines produce, don't near-match black and white scans, and don't check images that look digitally generated, such as screenshots, whose text repeats naturally. Each copied region becomes a close-up: the source and the copy side by side, outlined, with the page around them. PDF pages are rendered, so they aren't checked yet.
-4. **Decision.** `src/fraud-check.ts` sends the metadata, page images, pixel findings, and close-ups to OpenAI in one request, through a small `fetch` client for [OpenAI's Decisions API](https://developers.openai.com/api/docs/guides/decisions) in `src/decisions.ts`. It asks 15 predicate questions plus one native reliability score question. Each predicate returns a probability, and the native score returns an overall 0–4 reliability assessment. Signals at 75% or above appear in `reviewReasons`; only tampering and consistency signals contribute to the legacy fraud summary.
+4. **Decision.** `src/fraud-check.ts` sends the metadata, page images, pixel findings, and close-ups to the selected provider in one request, through `src/decisions.ts` or `src/jev.ts` with the shared rubric and validation in `src/assessment.ts`. It asks 15 predicate questions plus one native reliability score question. Each predicate returns a probability, and the native score returns an overall 0–4 reliability assessment. Signals at 75% or above appear in `reviewReasons`; only tampering and consistency signals contribute to the legacy fraud summary.
 
 To change the signals, edit `FRAUD_SIGNALS` in `src/fraud-check.ts`. Each has a `label` for the terminal and the `instructions` OpenAI is asked.
 

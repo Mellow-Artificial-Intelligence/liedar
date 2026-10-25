@@ -8,7 +8,7 @@ import { loadDocument } from "./document.ts";
 import { errorMessage, LiedarError } from "./errors.ts";
 import { checkDocument, type FraudReport } from "./fraud-check.ts";
 
-const USAGE = `Usage: liedar <file.pdf|png|jpg> [--json]
+const USAGE = `Usage: liedar <file.pdf|png|jpg> [--json] [--provider openai|typesafe]
 
 Prints JSON when --json is given or stdout isn't a terminal, including on errors.
 Exit codes: 0 checked (whatever the verdict), 1 failed, 2 usage error.`;
@@ -34,9 +34,11 @@ async function main() {
     throw new LiedarError("USAGE", "No file given.", { fix: USAGE });
   }
 
+  const provider = values.provider;
+  if (provider !== undefined && provider !== "openai" && provider !== "typesafe") throw new LiedarError("USAGE", "Choose --provider openai or --provider typesafe.");
   const document = await loadDocument(path);
   console.error(styleText("dim", `Checking ${basename(path)} (${pageSummary(document.pages.length, document.totalPages)})...`));
-  const report = await checkDocument(document);
+  const report = await checkDocument(document, { provider });
 
   if (jsonOutput) {
     printJson({ schemaVersion: SCHEMA_VERSION, note: NOTE, report, metadata: document.metadata, analysis: document.analysis });
@@ -50,6 +52,7 @@ function parseCommandLine() {
     return parseArgs({
       allowPositionals: true,
       options: {
+        provider: { type: "string" },
         json: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
       },

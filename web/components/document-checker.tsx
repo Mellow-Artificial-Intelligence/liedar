@@ -2,40 +2,50 @@
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import { ArrowRight, ArrowUpRight, Check, ChevronDown, Download, FileText, KeyRound, LoaderCircle, Plus, Upload, TriangleAlert, X } from "lucide-react";
-import type { FraudReason, FraudReport } from "@liedar";
+import type { FraudReason, FraudReport, Provider } from "@liedar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type Review = { schemaVersion: number; report: FraudReport; metadata: unknown; analysis: unknown };
 type ReviewState = { status: "idle" } | { status: "checking" } | { status: "complete"; result: Review };
 const MAX_BYTES = 20 * 1024 * 1024;
-const SESSION_KEY = "liedar-api-key";
+const SESSION_KEYS = { openai: "liedar-api-key", typesafe: "liedar-typesafe-api-key" };
+const PROVIDER_NAMES = { openai: "OpenAI", typesafe: "TypeSafe (Jev)" };
 
-export function DocumentChecker({ hasServerKey = false }: { hasServerKey?: boolean }) {
+export function DocumentChecker({ serverProviders = [] }: { serverProviders?: Provider[] }) {
   const input = useRef<HTMLInputElement>(null);
-  const [apiKey, setApiKey] = useState("");
+  const [providerChoice, setProviderChoice] = useState<Provider | "auto">("auto");
+  const [sessionKeys, setSessionKeys] = useState({ openai: "", typesafe: "" });
+  const automaticProvider: Provider = sessionKeys.openai ? "openai" : sessionKeys.typesafe ? "typesafe" : serverProviders[0] ?? "openai";
+  const provider = providerChoice === "auto" ? automaticProvider : providerChoice;
+  const apiKey = sessionKeys[provider];
+  const hasServerKey = serverProviders.includes(provider);
   const [keyDraft, setKeyDraft] = useState("");
   const [keyOpen, setKeyOpen] = useState(false);
   const [keyNotice, setKeyNotice] = useState("");
   useEffect(() => {
-    try { setApiKey(sessionStorage.getItem(SESSION_KEY) ?? ""); } catch { /* Memory-only use still works when browser storage is disabled. */ }
+    try {
+      const savedProvider = sessionStorage.getItem("liedar-provider");
+      if (savedProvider === "openai" || savedProvider === "typesafe") setProviderChoice(savedProvider);
+      setSessionKeys({ openai: sessionStorage.getItem(SESSION_KEYS.openai) ?? "", typesafe: sessionStorage.getItem(SESSION_KEYS.typesafe) ?? "" });
+    } catch { /* Memory-only use still works when browser storage is disabled. */ }
   }, []);
 
   function saveKey() {
     const key = keyDraft.trim();
-    if (!key || /\s/.test(key) || key.length > 1024) { setKeyNotice("Enter a valid OpenAI API key."); return; }
-    setApiKey(key);
+    if (!key || /\s/.test(key) || key.length > 1024) { setKeyNotice("Enter a valid API key for the selected provider."); return; }
+    setSessionKeys((previous) => ({ ...previous, [provider]: key }));
     setKeyDraft("");
     setKeyOpen(false);
     setKeyNotice("");
-    try { sessionStorage.setItem(SESSION_KEY, key); } catch { setKeyNotice("Key kept in memory for this page only."); }
+    try { sessionStorage.setItem(SESSION_KEYS[provider], key); } catch { setKeyNotice("Key kept in memory for this page only."); }
   }
 
   function clearKey() {
-    setApiKey("");
+    setSessionKeys((previous) => ({ ...previous, [provider]: "" }));
     setKeyDraft("");
     setKeyNotice("");
-    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* No persisted key exists when storage is disabled. */ }
+    try { sessionStorage.removeItem(SESSION_KEYS[provider]); } catch { /* No persisted key exists when storage is disabled. */ }
     setKeyOpen(!hasServerKey);
   }
 
@@ -65,11 +75,11 @@ export function DocumentChecker({ hasServerKey = false }: { hasServerKey?: boole
 
   async function check() {
     if (!file || busy) return;
-    if (!apiKey && !hasServerKey) { setKeyOpen(true); setKeyNotice("Add your OpenAI API key to continue."); return; }
+    if (!apiKey && !hasServerKey) { setKeyOpen(true); setKeyNotice("Add an API key for the selected provider to continue."); return; }
     setState({ status: "checking" });
     setError("");
     try {
-      const response = await fetch(`/api/check?name=${encodeURIComponent(file.name)}`, {
+      const response = await fetch(`/api/check?name=${encodeURIComponent(file.name)}&provider=${provider}`, {
         method: "POST", headers: { "Content-Type": "application/octet-stream", ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) }, body: file,
       });
       const payload = await response.json().catch(() => {
@@ -97,12 +107,13 @@ export function DocumentChecker({ hasServerKey = false }: { hasServerKey?: boole
         <p>Tampering, consistency, origin, and readability.</p>
       </div> : null}
       <div className="key-settings">
-        <button className="key-toggle" type="button" aria-expanded={keyOpen} aria-controls="api-key-panel" disabled={busy} onClick={() => setKeyOpen(!keyOpen)}><KeyRound size={14} />{apiKey ? "Using session API key" : hasServerKey ? "Using server API key" : "Add your API key"}<ChevronDown size={13} /></button>
+        <div className="provider-control"><label htmlFor="provider">Provider</label><select id="provider" value={providerChoice} disabled={busy} onChange={(event) => { setProviderChoice(event.target.value as Provider | "auto"); try { sessionStorage.setItem("liedar-provider", event.target.value); } catch { /* Choice remains in memory. */ } setState({ status: "idle" }); setKeyDraft(""); setKeyNotice(""); setError(""); }}><option value="auto">Auto · {PROVIDER_NAMES[automaticProvider]}</option><option value="openai">OpenAI</option><option value="typesafe">TypeSafe (Jev)</option></select></div>
+        <button className="key-toggle" type="button" aria-expanded={keyOpen} aria-controls="api-key-panel" disabled={busy} onClick={() => setKeyOpen(!keyOpen)}><KeyRound size={14} />{apiKey ? `${PROVIDER_NAMES[provider]} · Session key` : hasServerKey ? `${PROVIDER_NAMES[provider]} · Server key` : `Add ${PROVIDER_NAMES[provider]} key`}<ChevronDown size={13} /></button>
         {keyOpen ? <form id="api-key-panel" className="key-panel" onSubmit={(event) => { event.preventDefault(); saveKey(); }}>
-          <label htmlFor="api-key">{hasServerKey ? "Use a different API key" : "OpenAI API key"}</label>
-          <input id="api-key" type="password" autoComplete="off" spellCheck={false} value={keyDraft} onChange={(event) => setKeyDraft(event.target.value)} placeholder={apiKey ? "Enter a replacement key" : "sk-…"} disabled={busy} aria-describedby="key-help" />
+          <label htmlFor="api-key">{hasServerKey ? "Use a different API key" : `${PROVIDER_NAMES[provider]} API key`}</label>
+          <input id="api-key" type="password" autoComplete="off" spellCheck={false} value={keyDraft} onChange={(event) => setKeyDraft(event.target.value)} placeholder={apiKey ? "Enter a replacement key" : "Paste your API key"} disabled={busy} aria-describedby="key-help" />
           <p id="key-help">{hasServerKey ? "Leave this empty to use the server’s configured key. " : ""}Your key is kept in this tab’s session. Never saved on the server. Clear it here or close the tab to remove it.</p>
-          <div className="key-actions"><Button type="submit" size="sm" disabled={busy || !keyDraft.trim()}>Use key</Button>{apiKey ? <Button variant="ghost" type="button" size="sm" disabled={busy} onClick={clearKey}>Clear session key</Button> : <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">Get an API key <ArrowUpRight size={12} /></a>}</div>
+          <div className="key-actions"><Button type="submit" size="sm" disabled={busy || !keyDraft.trim()}>Use key</Button>{apiKey ? <Button variant="ghost" type="button" size="sm" disabled={busy} onClick={clearKey}>Clear session key</Button> : <a href={provider === "typesafe" ? "https://docs.typesafe.ai/api" : "https://platform.openai.com/api-keys"} target="_blank" rel="noreferrer">Get an API key <ArrowUpRight size={12} /></a>}</div>
         </form> : null}
         {keyNotice ? <p className="key-notice" role="status">{keyNotice}</p> : null}
       </div>
@@ -146,6 +157,7 @@ function ReviewResult({ result, fileName, onReset }: { result: Review; fileName:
   }
   return (
     <div className="result" aria-live="polite">
+      <p className="report-provider">{PROVIDER_NAMES[report.provider]} · {report.model}</p>
       <div className="result-file"><FileText size={15} /><span>{fileName}</span><span className="page-count">{report.pagesChecked} {report.pagesChecked === 1 ? "page" : "pages"}</span></div>
       <div className="reliability-score"><span>Reliability</span><strong>{report.reliability.score.toFixed(2)} <span>/ {report.reliability.maxScore}</span></strong><small>Model rubric score · Higher means fewer observed concerns</small></div>
       <div className="verdict">

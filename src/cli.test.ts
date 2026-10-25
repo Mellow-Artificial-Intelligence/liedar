@@ -12,7 +12,7 @@ const CLI_PATH = join(import.meta.dirname, "cli.ts");
 
 /** Runs the CLI with stdout piped, from an empty directory with no API key, so it never reaches OpenAI. */
 function runCli(...args: string[]) {
-  const { OPENAI_API_KEY: _, ...env } = process.env;
+  const { OPENAI_API_KEY: _, TYPESAFE_AI_API_KEY: _typesafe, ...env } = process.env;
   return new Promise<{ exitCode: number; stdout: string }>((resolve) => {
     execFile(process.execPath, [CLI_PATH, ...args], { cwd: directory, env }, (error, stdout) => {
       resolve({ exitCode: typeof error?.code === "number" ? error.code : 0, stdout });
@@ -50,4 +50,14 @@ describe("cli", () => {
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Usage: liedar");
   });
+  test("accepts a provider override and rejects unknown providers", async () => {
+    await writeFile(join(directory, "provider.pdf"), buildPdf(), "latin1");
+    const selected = await runCli("provider.pdf", "--provider", "typesafe");
+    expect(selected.exitCode).toBe(1);
+    expect(JSON.parse(selected.stdout).error).toMatchObject({ code: "MISSING_API_KEY", message: "TYPESAFE_AI_API_KEY is not set." });
+    const invalid = await runCli("provider.pdf", "--provider", "unknown");
+    expect(invalid.exitCode).toBe(2);
+    expect(JSON.parse(invalid.stdout).error.code).toBe("USAGE");
+  });
+
 });
